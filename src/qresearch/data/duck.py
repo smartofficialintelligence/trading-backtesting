@@ -14,11 +14,11 @@ Two views are created per dataset plus two catalog-wide ones:
     A table macro taking an ``as_of`` argument and applying the availability filter, so
     ad-hoc SQL has a correct default available without hand-writing the predicate.
 
-Fetch results with ``.pl()`` or ``.arrow()``, not ``.fetchall()``. DuckDB materialises
-``TIMESTAMPTZ`` into Python ``datetime`` objects via ``pytz``, which is not a dependency
-here (this project is UTC-only, so a timezone database would be carried for a conversion
-it never needs). The Arrow path has no such requirement and is faster besides. Anyone who
-wants ``.fetchall()`` in a notebook can ``pip install pytz``.
+Prefer ``.pl()`` or ``.arrow()`` over ``.fetchall()`` for anything larger than a glance:
+the Arrow path hands columns straight to Polars without building a Python object per
+cell. ``.fetchall()`` does work -- ``pytz`` is a dependency because DuckDB uses it to
+materialise ``TIMESTAMPTZ`` into Python ``datetime`` objects and to bind them as
+parameters -- it is just the slow path.
 """
 
 from __future__ import annotations
@@ -37,10 +37,10 @@ from qresearch.time import ensure_utc
 
 
 def sql_utc(value: _dt.datetime) -> str:
-    """Format an aware UTC datetime for interpolation into DuckDB SQL.
+    """Format an aware UTC datetime for interpolation into DuckDB SQL text.
 
-    Binding a tz-aware ``datetime`` as a parameter also routes through ``pytz``; an
-    ISO-8601 string casts cleanly to ``TIMESTAMPTZ`` with no such requirement.
+    Needed where a parameter cannot be bound -- ``connection.sql()`` takes no parameters,
+    unlike ``execute()`` -- and the value has to appear in the statement itself.
     """
     return ensure_utc(value).isoformat()
 

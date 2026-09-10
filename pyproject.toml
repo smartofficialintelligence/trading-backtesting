@@ -13,6 +13,8 @@ dependencies = [
     "pydantic>=2.9",
     "typer>=0.15",
     "pyyaml>=6.0",
+    # DuckDB routes TIMESTAMPTZ <-> Python datetime through pytz.
+    "pytz>=2024.1",
 ]
 
 [project.scripts]

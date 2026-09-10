@@ -92,3 +92,23 @@ def test_sql_and_polars_schemas_agree(
 
     frame = query_asof(conn, ingested.dataset_id, T0 + dt.timedelta(minutes=5))
     assert frame.columns == BAR_SCHEMA.names
+
+
+def test_fetchall_and_parameter_binding_work_on_timestamptz(
+    conn: duckdb.DuckDBPyConnection, ingested: IngestedFixture
+) -> None:
+    """pytz is a dependency so that ad-hoc ``.fetchall()`` and ``?`` binding both work.
+
+    Both directions go through pytz inside DuckDB: materialising a TIMESTAMPTZ column
+    into Python datetimes, and binding a tz-aware datetime as a query parameter.
+    """
+    suffix = _view_suffix(ingested.dataset_id)
+    row = conn.execute(f"SELECT bar_start FROM bars_{suffix} ORDER BY bar_start LIMIT 1").fetchone()
+    assert row is not None
+    assert row[0].tzinfo is not None
+    assert row[0] == T0
+
+    as_of = T0 + dt.timedelta(minutes=33)
+    bound = conn.execute(f"SELECT count(*) FROM bars_asof_{suffix}(?)", [as_of]).fetchone()
+    assert bound is not None
+    assert bound[0] == query_asof(conn, ingested.dataset_id, as_of).height
