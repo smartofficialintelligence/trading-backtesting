@@ -1,0 +1,67 @@
+# Ingest the synthetic two-asset crypto sample.
+#
+# Generate the source first:   qresearch data demo --root data
+# (the demo also ingests it; this file shows the equivalent declarative form)
+#
+# Every field here is part of the dataset's identity except `expect_complete_grid`.
+# Change a policy value and you get a different dataset_id -- by design.
+
+source_uri: data/source/synthetic_1m.csv
+source_name: "synthetic:bars-v1"
+bar_size: 1m
+asset_class: crypto
+venue: SYNTH
+calendar_id: "24x7:1"
+normalization_version: "1"
+expect_complete_grid: true
+
+policy:
+  # REQUIRED and never defaulted: which edge the source's timestamp denotes.
+  # See docs/timestamp_semantics.md before setting this for a real provider.
+  timestamp_label: bar_start
+  # Delay from bar_end to availability, used when the source has no available_at column.
+  publication_latency: PT2S
+  price_adjustment: not_applicable
+  missing_bars: omit
+  duplicates: keep_highest_revision
+  revisions: as_known
+  volume_unit: base_asset
+
+mapping:
+  timestamp: timestamp
+  symbol: symbol
+  open: open
+  high: high
+  low: low
+  close: close
+  volume: volume
+  trade_count: trades
+  # This source publishes its own availability and revision; prefer them over derivation.
+  available_at: available_at
+  revision: revision
+
+instruments:
+  - instrument_id: "CRYPTO:BTCUSD"
+    asset_class: crypto
+    venue: SYNTH
+    quote_currency: USD
+    base_currency: BTC
+    price_increment: "0.01"
+    quantity_increment: "0.00000001"
+    calendar_id: "24x7:1"
+    aliases:
+      - symbol: BTC-USD
+        source: "synthetic:bars-v1"
+        effective_from: "2023-01-01T00:00:00Z"
+  - instrument_id: "CRYPTO:ETHUSD"
+    asset_class: crypto
+    venue: SYNTH
+    quote_currency: USD
+    base_currency: ETH
+    price_increment: "0.01"
+    quantity_increment: "0.00000001"
+    calendar_id: "24x7:1"
+    aliases:
+      - symbol: ETH-USD
+        source: "synthetic:bars-v1"
+        effective_from: "2023-01-01T00:00:00Z"
