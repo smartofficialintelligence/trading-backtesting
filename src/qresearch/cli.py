@@ -27,6 +27,7 @@ from qresearch.application.run_backtest import (
 )
 from qresearch.artifacts.contracts import RunResult
 from qresearch.artifacts.local import LocalArtifactStore, economic_digest
+from qresearch.artifacts.report import build_report_for_run
 from qresearch.data.adapters.base import BarAdapter, ColumnMapping, IngestRequest
 from qresearch.data.adapters.binance import SCHEME as BINANCE_SCHEME
 from qresearch.data.adapters.binance import BinanceKlineAdapter
@@ -446,6 +447,8 @@ def backtest_run(
     for (name, rule), result in results.items():
         typer.secho(f"== scenario {name} / fill rule {rule.value}: {result.run_id}", bold=True)
         _print_result(result, store)
+        report = build_report_for_run(store, result.run_id)
+        typer.echo(f"report           {report}")
     typer.echo("")
     typer.echo("assumptions to review: docs/leakage_checklist.md")
 
@@ -534,6 +537,26 @@ def runs_index(
     names = build_run_index(LocalArtifactStore(runs), connection)
     connection.close()
     typer.echo(f"built {', '.join(names)} in {database}")
+
+
+@runs_app.command("report")
+def runs_report(
+    run_ids: Annotated[list[str] | None, typer.Argument(help="Runs, or omit for all.")] = None,
+    runs: RunsOption = Path("runs"),
+) -> None:
+    """Write a self-contained report.html into each run directory."""
+    store = LocalArtifactStore(runs)
+    targets = run_ids or list(store.list_runs())
+    if not targets:
+        typer.echo(f"no runs under {runs}")
+        return
+    missing = [r for r in targets if not store.exists(r)]
+    if missing:
+        typer.secho(f"unknown runs: {missing}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    for run_id in targets:
+        path = build_report_for_run(store, run_id)
+        typer.echo(f"{path}  ({path.stat().st_size // 1024} KB)")
 
 
 @runs_app.command("reproduce")

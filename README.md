@@ -22,6 +22,7 @@ The MVP defined in the development plan (Stages 0–5) is implemented. Not live 
 | features | causal expressions with derived availability; gap-aware windows; cross-sectional ranks with batch availability; session features; fold-owned fitted transforms; leakage checkers in the package |
 | simulation | phase-ordered bar-open engine; distinct signal/order/eligible/fill timestamps; decomposed spread/slippage/fee; participation caps; reconciled accounting; order-independent constraints |
 | research | walk-forward folds with stated purge and embargo; labelled annualisation; per-fold and stitched per-role metrics; cost-scenario sensitivity |
+| reporting | per-run self-contained `report.html` (inline SVG, no server/CDN): assumptions and warnings above the metrics, equity/drawdown/exposure, cost attribution, trade P&L distribution, fold ribbon, stability table |
 | artifacts | run id = hash of the resolved spec; atomic publish; identical rerun reuses; divergent rerun kept aside; environment capture; rebuildable DuckDB run index; `runs reproduce` |
 
 ## Quickstart
@@ -38,6 +39,7 @@ uv run qresearch data head <dataset-id> --root data --as-of 2024-03-04T00:33:00Z
 uv run qresearch backtest run -c configs/examples/crypto_momentum.yaml --root data --runs runs
 uv run qresearch runs list --runs runs
 uv run qresearch runs compare <run-a> <run-b> --runs runs --role test
+uv run qresearch runs report <run-id> --runs runs      # report.html (also written automatically)
 uv run qresearch runs reproduce <run-id> --root data --runs runs
 ```
 

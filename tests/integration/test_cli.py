@@ -241,3 +241,45 @@ def test_unknown_scenario_and_missing_run_exit_nonzero(tmp_path: Path) -> None:
     assert bad.exit_code == 2 and "unknown cost scenario" in bad.output
     missing = runner.invoke(app, ["runs", "show", "run_nope", "--runs", runs])
     assert missing.exit_code == 2
+
+
+def test_backtest_writes_a_report_and_runs_report_regenerates_it(tmp_path: Path) -> None:
+    root, runs = str(tmp_path / "data"), str(tmp_path / "runs")
+    dataset_id = _demo(tmp_path)
+    config = _write_config(tmp_path, "crypto_momentum.yaml", dataset_id)
+
+    ran = runner.invoke(
+        app,
+        [
+            "backtest",
+            "run",
+            "-c",
+            str(config),
+            "--root",
+            root,
+            "--runs",
+            runs,
+            "--scenario",
+            "base",
+            "--fill-rule",
+            "open_of_current_bar",
+        ],
+    )
+    assert ran.exit_code == 0, ran.output
+    assert "report           " in ran.output
+    run_id = _run_id_from(ran.output, rule="open_of_current_bar")
+    report = Path(runs) / run_id / "report.html"
+    assert report.exists() and report.stat().st_size > 5_000
+
+    text = report.read_text()
+    assert "What this run assumed" in text
+    assert "optimistic_fill_rule" in text, "the run's warnings must reach the report"
+    assert "https://" not in text and "<script" not in text, "self-contained, no remote assets"
+
+    report.unlink()
+    again = runner.invoke(app, ["runs", "report", run_id, "--runs", runs])
+    assert again.exit_code == 0, again.output
+    assert report.exists()
+
+    missing = runner.invoke(app, ["runs", "report", "run_nope", "--runs", runs])
+    assert missing.exit_code == 2

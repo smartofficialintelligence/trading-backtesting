@@ -367,3 +367,25 @@ a guess. An unpriced position has *unknown* P&L, so `gross_pnl`, `net_pnl`,
 
 Relatedly, `profit_factor` is null rather than infinite when a run has no losing trades:
 an infinity in a headline metric is worse than an absence.
+
+## D45. The UI is a self-contained HTML report per run — reviewed with the user
+
+Chosen over a served dashboard and over notebook helpers. A report written into the run
+directory as `report.html` fits the append-only artifact model exactly: versioned with the
+run, reproducible from it, openable years later with no server, no CDN and no pinned
+plotting library. Charts are hand-rolled inline SVG for the same reason -- adding
+matplotlib or plotly would make the artifact depend on a runtime it cannot carry.
+
+**Layout is load-bearing.** Assumptions (dataset, cost scenario, fill rule, latency,
+slippage, code revision) come first, warnings sit above the metrics, and only then the
+headline tiles. A Sharpe read without its caveats is how people fool themselves, and the
+ordering is the cheapest available defence. The footer repeats the pointer to
+`docs/leakage_checklist.md`.
+
+Rendering downsamples each series to ~1400 points using min/max-per-bucket rather than
+stride sampling, which would drop exactly the spikes a reader is looking for. On a real
+day of BTC/ETH that took the file from 388 KB to 140 KB with the shape intact.
+
+Untrusted text (labels, warning messages) is escaped; a test asserts no raw tag can reach
+the document and that the tag tree stays balanced, rather than grepping for a payload
+substring that appears harmlessly escaped.
