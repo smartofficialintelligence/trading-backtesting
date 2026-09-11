@@ -1,0 +1,13 @@
+{
+  "backtest_s": 10.391,
+  "bars": 21600,
+  "captured_at": "2026-09-11T02:04:42.085617+00:00",
+  "days": 3,
+  "folds": 3,
+  "generate_s": 0.27,
+  "ingest_s": 0.473,
+  "instruments": 5,
+  "peak_rss_mb": 307.09765625,
+  "platform": "Linux-6.8.0-136-generic-x86_64-with-glibc2.39",
+  "python": "3.12.3"
+}

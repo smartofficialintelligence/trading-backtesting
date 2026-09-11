@@ -27,9 +27,23 @@ from qresearch.data.adapters.csv_parquet import LocalFileBarAdapter
 from qresearch.data.catalog import DatasetCatalog
 from qresearch.data.contracts import AssetClass, PriceAdjustment
 from qresearch.data.manifests import DuplicatePolicy, NormalizationPolicy, TimestampLabel
-from qresearch.data.synthetic import SOURCE_NAME, SyntheticAsset, SyntheticSpec, instruments_for, write_source_csv
+from qresearch.data.synthetic import (
+    SOURCE_NAME,
+    SyntheticAsset,
+    SyntheticSpec,
+    instruments_for,
+    write_source_csv,
+)
 from qresearch.research.walk_forward import WalkForwardPlan
 from qresearch.simulation.engine import SimulationConfig
+
+
+def _codes(count: int) -> list[str]:
+    """AAA, AAB, AAC, ... -- valid uppercase base-asset codes."""
+    out = []
+    for i in range(count):
+        out.append("A" + chr(ord("A") + i // 26) + chr(ord("A") + i % 26))
+    return out
 
 
 def main() -> None:
@@ -39,11 +53,19 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path("benchmarks/latest.json"))
     args = parser.parse_args()
 
+    # Three-letter base codes: the Instrument contract validates currency patterns.
     assets = tuple(
-        SyntheticAsset(f"A{i}-USD", f"CRYPTO:A{i}USD", 100.0 * (i + 1), 0.001, 50.0)
-        for i in range(args.instruments)
+        SyntheticAsset(f"{code}-USD", f"CRYPTO:{code}USD", 100.0 * (i + 1), 0.001, 50.0)
+        for i, code in enumerate(_codes(args.instruments))
     )
-    spec = replace(SyntheticSpec(), assets=assets, minutes=args.days * 1440, gap_minutes=(), delayed_minutes=(), duplicate_minutes=())
+    spec = replace(
+        SyntheticSpec(),
+        assets=assets,
+        minutes=args.days * 1440,
+        gap_minutes=(),
+        delayed_minutes=(),
+        duplicate_minutes=(),
+    )
     timings: dict[str, float] = {}
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -53,29 +75,48 @@ def main() -> None:
         timings["generate_s"] = time.perf_counter() - t
 
         request = IngestRequest(
-            uri=str(source), bar_size="1m",
+            uri=str(source),
+            bar_size="1m",
             policy=NormalizationPolicy(
-                timestamp_label=TimestampLabel.BAR_START, publication_latency=dt.timedelta(seconds=2),
-                price_adjustment=PriceAdjustment.NOT_APPLICABLE, duplicates=DuplicatePolicy.KEEP_HIGHEST_REVISION,
+                timestamp_label=TimestampLabel.BAR_START,
+                publication_latency=dt.timedelta(seconds=2),
+                price_adjustment=PriceAdjustment.NOT_APPLICABLE,
+                duplicates=DuplicatePolicy.KEEP_HIGHEST_REVISION,
                 volume_unit="base_asset",
             ),
-            instruments=instruments_for(spec), source_name=SOURCE_NAME,
-            mapping=ColumnMapping(trade_count="trades", available_at="available_at", revision="revision"),
+            instruments=instruments_for(spec),
+            source_name=SOURCE_NAME,
+            mapping=ColumnMapping(
+                trade_count="trades", available_at="available_at", revision="revision"
+            ),
         )
         catalog = DatasetCatalog(root / "data")
         t = time.perf_counter()
         outcome = ingest_bars(
-            request, catalog=catalog, adapter=LocalFileBarAdapter(), asset_class=AssetClass.CRYPTO,
-            venue="SYNTH", calendar_id="24x7:1", normalization_version="1", created_by="benchmark",
+            request,
+            catalog=catalog,
+            adapter=LocalFileBarAdapter(),
+            asset_class=AssetClass.CRYPTO,
+            venue="SYNTH",
+            calendar_id="24x7:1",
+            normalization_version="1",
+            created_by="benchmark",
         )
         timings["ingest_s"] = time.perf_counter() - t
 
         config = BacktestConfig(
             dataset_id=outcome.manifest.dataset_id,
-            features=(FeatureRef(kind="lagged_return", params={"lag": 1}), FeatureRef(kind="rolling_volatility", params={"window": 20})),
+            features=(
+                FeatureRef(kind="lagged_return", params={"lag": 1}),
+                FeatureRef(kind="rolling_volatility", params={"window": 20}),
+            ),
             strategy=StrategyRef(kind="lagged_signal", params={"feature": "ret_1", "weight": 0.2}),
             simulation=SimulationConfig(),
-            plan=WalkForwardPlan(train=dt.timedelta(days=1), test=dt.timedelta(hours=12), purge=dt.timedelta(minutes=5)),
+            plan=WalkForwardPlan(
+                train=dt.timedelta(days=1),
+                test=dt.timedelta(hours=12),
+                purge=dt.timedelta(minutes=5),
+            ),
             cost_scenarios=("base",),
         )
         t = time.perf_counter()

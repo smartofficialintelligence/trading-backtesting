@@ -290,3 +290,44 @@ def test_compare_metrics_classifies_agreement(
         results["base"].aggregate["test"], results["free"].aggregate["test"]
     )
     assert different["total_costs"] is Agreement.DIFFERENT
+
+
+def test_every_run_carries_its_known_limitations(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    """DEVELOPMENT_PLAN.md Stage 5: survivor-biased universes and assumed spreads are
+    named on the run, not left to the reader."""
+    results = run_sensitivity(
+        config(dataset_id=ingested.dataset_id, cost_scenarios=("base", "free")),
+        catalog=ingested.catalog,
+        store=store,
+    )
+    base_codes = {w.code for w in results["base"].warnings}
+    assert {"static_universe", "assumed_spread"} <= base_codes
+    free_codes = {w.code for w in results["free"].warnings}
+    assert "zero_spread_assumed" in free_codes and "assumed_spread" not in free_codes
+    assert all(w.occurrences >= 1 for w in results["base"].warnings)
+
+
+def test_runs_log_with_their_run_id(ingested: IngestedFixture, store: LocalArtifactStore) -> None:
+    import io
+    import json
+    import logging
+
+    from qresearch.logging import configure
+
+    stream = io.StringIO()
+    configure(logging.INFO, json_lines=True, stream=stream)
+    try:
+        result = run_backtest(
+            config(dataset_id=ingested.dataset_id), catalog=ingested.catalog, store=store
+        )
+    finally:
+        configure(logging.WARNING)
+    lines = [json.loads(ln) for ln in stream.getvalue().splitlines()]
+    messages = [ln["message"] for ln in lines]
+    assert "run started" in messages and "run complete" in messages
+    assert all(
+        ln["run_id"] == result.run_id for ln in lines if ln["message"].startswith(("run ", "fold "))
+    )
+    assert any(ln["message"] == "fold complete" and ln["role"] == "test" for ln in lines)

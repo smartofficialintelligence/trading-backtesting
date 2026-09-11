@@ -29,7 +29,10 @@ from qresearch.data.manifests import (
 )
 from qresearch.data.validation import validate_bars
 from qresearch.ids import InstrumentId
+from qresearch.logging import get_logger
 from qresearch.time import as_utc_scalar, now_utc, parse_duration
+
+log = get_logger(__name__)
 
 
 class DataQualityError(ValueError):
@@ -140,6 +143,18 @@ def ingest_bars(
         created_by=created_by,
         created_at=now_utc(),
         instruments=[i for i in request.instruments if i.instrument_id in identity.instrument_ids],
+    )
+    log.info(
+        "dataset %s %s",
+        "reused" if existed else "written",
+        manifest.dataset_id,
+        extra={
+            "fields": {
+                "rows": manifest.row_count,
+                "errors": len(report.errors),
+                "warnings": len(report.warnings),
+            }
+        },
     )
     return IngestOutcome(manifest=manifest, report=report, reused_existing=existed)
 

@@ -46,6 +46,7 @@ from qresearch.features.pipeline import compute_features
 from qresearch.features.registry import build_feature, build_transform
 from qresearch.features.transforms import FittedState, TrainingData, Transform
 from qresearch.ids import DatasetId, InstrumentId
+from qresearch.logging import get_logger, run_context
 from qresearch.research.metrics import Metrics, annualization_for, compute_metrics
 from qresearch.research.splits import DataSplit, SplitRole, TimeRange
 from qresearch.research.walk_forward import FixedSplitPlan, Fold, WalkForwardPlan, generate_folds
@@ -54,6 +55,8 @@ from qresearch.simulation.events import WarningRecord
 from qresearch.simulation.execution import CostConfig, SlippageConfig, SlippageKind
 from qresearch.strategy.registry import build_strategy
 from qresearch.time import as_utc_scalar, now_utc
+
+log = get_logger(__name__)
 
 COST_SCENARIOS: dict[str, CostConfig] = {
     "base": CostConfig(),
@@ -187,6 +190,28 @@ def execute(
     """Run every fold and role without touching the store."""
     random.seed(spec.seed)
     started_at = started_at or now_utc()
+    with run_context(spec.run_id):
+        return _execute(spec, catalog=catalog, manifest=manifest, started_at=started_at)
+
+
+def _execute(
+    spec: RunSpec,
+    *,
+    catalog: DatasetCatalog,
+    manifest: DatasetManifest,
+    started_at: _dt.datetime,
+) -> tuple[RunResult, dict[str, pl.DataFrame], list[FittedState]]:
+    log.info(
+        "run started",
+        extra={
+            "fields": {
+                "dataset": spec.dataset_id,
+                "strategy": spec.strategy.kind,
+                "scenario": spec.cost_scenario,
+                "instruments": len(spec.instrument_ids),
+            }
+        },
+    )
     calendar = get_calendar(spec.calendar_id)
     instruments = {i: manifest.instrument(i) for i in spec.instrument_ids}
     annualization = annualization_for(spec.calendar_id, spec.bar_size)
@@ -260,6 +285,21 @@ def execute(
                     if prior is None
                     else prior.model_copy(update={"occurrences": prior.occurrences + w.occurrences})
                 )
+            log.info(
+                "fold complete",
+                extra={
+                    "fields": {
+                        "fold": fold.index,
+                        "role": role.value,
+                        "decisions": result.decisions,
+                        "fills": len(result.fills),
+                        "return": metrics.total_return,
+                    }
+                },
+            )
+
+    for limitation in _limitations(spec):
+        warnings.setdefault((limitation.code, None), limitation)
 
     aggregate = {
         role.value: compute_metrics(
@@ -286,7 +326,53 @@ def execute(
         aggregate=aggregate,
         warnings=tuple(sorted(warnings.values(), key=lambda w: (w.code, w.instrument_id or ""))),
     )
+    log.info(
+        "run complete",
+        extra={
+            "fields": {
+                "folds": len(folds),
+                "warnings": sum(w.occurrences for w in warnings.values()),
+            }
+        },
+    )
     return run_result, frames_out, fitted
+
+
+def _limitations(spec: RunSpec) -> list[WarningRecord]:
+    """Known modelling limitations every run must carry (DEVELOPMENT_PLAN.md Stage 5)."""
+    at = spec.span.start
+    costs = spec.simulation.execution.costs
+    records = [
+        WarningRecord(
+            at=at,
+            code="static_universe",
+            message=(
+                f"the universe is a static list of {len(spec.instrument_ids)} instrument(s) "
+                "applied across the whole span; point-in-time membership is not modelled, "
+                "so results can carry survivorship bias"
+            ),
+        )
+    ]
+    if costs.half_spread_bps > 0:
+        records.append(
+            WarningRecord(
+                at=at,
+                code="assumed_spread",
+                message=(
+                    f"a {costs.half_spread_bps:g} bps half-spread is an assumption; no quote "
+                    "data was used"
+                ),
+            )
+        )
+    else:
+        records.append(
+            WarningRecord(
+                at=at,
+                code="zero_spread_assumed",
+                message="fills pay no spread; this is a sensitivity baseline, not a forecast",
+            )
+        )
+    return records
 
 
 def _load_bars(catalog: DatasetCatalog, spec: RunSpec) -> pl.DataFrame:

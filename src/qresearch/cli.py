@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
@@ -47,6 +48,7 @@ from qresearch.data.validation import validate_bars
 from qresearch.features.pipeline import compute_features
 from qresearch.features.registry import build_feature
 from qresearch.ids import DatasetId, RunId
+from qresearch.logging import configure
 from qresearch.research.experiments import build_run_index, compare, fold_table, run_table
 from qresearch.time import ensure_utc
 
@@ -75,8 +77,16 @@ _SEVERITY_MARK = {
 
 
 @app.callback()
-def _root() -> None:
+def _root(
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Log progress (INFO) to stderr.")
+    ] = False,
+    json_logs: Annotated[
+        bool, typer.Option("--json-logs", help="One JSON object per log line.")
+    ] = False,
+) -> None:
     """qresearch -- intraday strategy research and backtesting."""
+    configure(logging.INFO if verbose else logging.WARNING, json_lines=json_logs)
 
 
 @app.command()
