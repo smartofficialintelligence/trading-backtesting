@@ -28,6 +28,12 @@ dev = [
     "mypy>=1.13",
     "types-pyyaml>=6.0",
 ]
+oracle = [
+    # Independent simulator used only by the differential test in
+    # tests/integration/test_oracle_differential.py. Not needed to run qresearch.
+    "backtesting>=0.6",
+    "pandas>=2.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -67,4 +73,6 @@ markers = [
     # Hits a live venue. Deselected by default so the suite is hermetic and CI does not
     # depend on a third party being reachable: QRESEARCH_NETWORK_TESTS=1 to enable.
     "network: requires outbound network access to a market-data venue",
+    # Differential test against an independent simulator; needs the 'oracle' extra.
+    "oracle: compares results against an external backtesting library",
 ]

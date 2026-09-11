@@ -61,6 +61,12 @@ uv run python scripts/benchmark.py --instruments 5 --days 5     # baseline timin
 are deselected by default — `QRESEARCH_NETWORK_TESTS=1 uv run pytest -m network` to run
 them.
 
+The suite includes a **differential test against `backtesting.py`** (`-m oracle`, needs
+`--extra oracle`): the same strategy on the same bars through an independent engine, which
+must produce identical fills. On a day of real BTCUSDT data it agrees exactly — 718 fills,
+zero price difference, final equity matching to float64 rounding. It exists to catch
+engine drift that our own tests would happily agree with.
+
 ## Layout
 
 ```

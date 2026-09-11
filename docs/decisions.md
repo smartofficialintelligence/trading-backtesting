@@ -311,3 +311,29 @@ rather than writing a dataset that may be shifted in time.
 The suite must be hermetic and CI must not depend on a third party being reachable.
 Live-venue tests carry a `network` marker and skip unless `QRESEARCH_NETWORK_TESTS=1`.
 The offline fixture carries the contract; the network test is a freshness check.
+
+## D42. Differential test against an independent simulator — reviewed with the user
+
+Every other test checks qresearch against qresearch's own idea of correct. This one runs
+the same strategy on the same bars through `backtesting.py` -- a widely used library with
+its own engine -- and requires the fills to agree.
+
+`backtesting.py`'s fill semantics were established the same way the Binance label was:
+empirically, with distinct per-bar prices, not from its documentation. An order placed
+while bar N is the latest fills at the **open of bar N+1**, which is exactly
+`FillRule.OPEN_OF_CURRENT_BAR`. So the test doubles as independent evidence for D35.
+
+Result on a day of real BTCUSDT 1m data: **718 fills on both sides, identical sides and
+quantities, fill prices identical to zero difference, final equity identical
+(9.3e-16 relative -- float64 rounding).** The conservative rule, run on the same data,
+lands 0.227% lower; that gap is ~85% of the strategy's apparent return, which is the
+bracket argument made concrete against an outside reference.
+
+One expected difference, asserted rather than papered over: we stamp a fill at
+`eligible_at`, `backtesting.py` stamps it at the start of the bar whose open was used.
+The offset is exactly the publication latency and the prices are identical, so the equity
+comparison replays our fills under their marking convention instead of comparing snapshot
+timelines that mean different things.
+
+The test is permanent, marked `oracle`, skipped unless the optional extra is installed,
+and runs in CI. Its value is catching engine drift that our own tests would agree with.
