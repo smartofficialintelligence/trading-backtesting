@@ -11,6 +11,7 @@ import datetime as dt
 
 import polars as pl
 import pytest
+from pydantic import ValidationError
 from tests.golden.conftest import Scripted, at, bars, free_config, run
 
 from qresearch.simulation.events import OrderStatus
@@ -152,7 +153,7 @@ def test_orders_are_immutable_and_lifecycle_is_events() -> None:
     result = run(bars("X", FOUR), Scripted({1: [("delta", "X", 10.0)]}))
     statuses = [(e.status, e.quantity) for e in result.order_events]
     assert statuses == [(OrderStatus.SUBMITTED, 10.0), (OrderStatus.FILLED, 10.0)]
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         result.orders[0].quantity = 5.0  # type: ignore[misc]
 
 
@@ -162,3 +163,16 @@ def test_frames_have_typed_columns_even_when_empty() -> None:
     assert frames["fills"].height == 0
     assert frames["fills"].schema["fill_at"] == pl.Datetime("us", "UTC")
     assert frames["equity_curve"].height > 0
+
+
+def test_optional_ledger_columns_keep_their_numeric_and_temporal_types() -> None:
+    """A persisted ``float | None`` must stay a float, not become a string that happens
+    to round-trip through Parquet."""
+    result = run(bars("X", FOUR), Scripted({1: [("delta", "X", 10.0)]}))
+    frames = result.frames()
+    assert frames["fills"].schema["participation"] == pl.Float64
+    assert frames["orders"].schema["liquidity_estimate"] == pl.Float64
+    assert frames["orders"].schema["expires_at"] == pl.Datetime("us", "UTC")
+    assert frames["orders"].schema["order_id"] == pl.String
+    assert frames["intent_outcomes"].schema["rejection"] == pl.String
+    assert frames["warnings"].schema["occurrences"] == pl.Int64

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
+from tests.golden.conftest import at
 
 from qresearch.ids import InstrumentId
 from qresearch.simulation.constraints import (
@@ -12,7 +12,6 @@ from qresearch.simulation.constraints import (
     size_intents,
 )
 from qresearch.simulation.events import OrderIntent, RejectionReason
-from tests.golden.conftest import at
 
 T = at(5)
 X, Y, Z = InstrumentId("X"), InstrumentId("Y"), InstrumentId("Z")

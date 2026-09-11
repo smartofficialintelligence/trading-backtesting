@@ -24,7 +24,7 @@ from typing import Self
 from pydantic import Field, model_validator
 
 from qresearch.config import FrozenModel
-from qresearch.data.contracts import AssetClass, BarSize, PriceAdjustment
+from qresearch.data.contracts import AssetClass, BarSize, Instrument, PriceAdjustment
 from qresearch.ids import DatasetId, InstrumentId, content_hash
 from qresearch.time import UtcDatetime
 
@@ -215,6 +215,11 @@ class DatasetManifest(FrozenModel):
     """Immutable lineage and quality contract for an exact set of Parquet files."""
 
     identity: DatasetIdentity
+    instruments: tuple[Instrument, ...] = ()
+    """Full definitions (increments, calendar, aliases) for every id in the identity.
+    Not part of the identity hash -- an alias correction is not a data change -- but
+    required by the simulator, which needs quantity increments and the calendar."""
+
     partitions: tuple[PartitionRef, ...]
     content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     """Hash over canonical row content, independent of Parquet writer details."""
@@ -235,7 +240,21 @@ class DatasetManifest(FrozenModel):
         paths = [p.path for p in self.partitions]
         if len(set(paths)) != len(paths):
             raise ValueError("duplicate partition paths in manifest")
+        if self.instruments:
+            defined = {i.instrument_id for i in self.instruments}
+            missing = sorted(set(self.identity.instrument_ids) - defined)
+            if missing:
+                raise ValueError(f"manifest lacks Instrument definitions for {missing}")
         return self
+
+    def instrument(self, instrument_id: str) -> Instrument:
+        for candidate in self.instruments:
+            if candidate.instrument_id == instrument_id:
+                return candidate
+        raise KeyError(
+            f"dataset {self.dataset_id} carries no Instrument definition for "
+            f"{instrument_id!r}; re-ingest with instrument definitions"
+        )
 
     @property
     def dataset_id(self) -> DatasetId:

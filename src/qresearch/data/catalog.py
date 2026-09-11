@@ -37,6 +37,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from qresearch.data.contracts import Instrument
 from qresearch.data.manifests import (
     DatasetIdentity,
     DatasetManifest,
@@ -191,6 +192,7 @@ class DatasetCatalog:
         validation: ValidationReport,
         created_by: str,
         created_at: _dt.datetime,
+        instruments: Sequence[Instrument] = (),
     ) -> DatasetManifest:
         """Write ``frame`` as a new dataset version and return its manifest.
 
@@ -241,6 +243,7 @@ class DatasetCatalog:
 
         manifest = DatasetManifest(
             identity=identity,
+            instruments=tuple(sorted(instruments, key=lambda i: i.instrument_id)),
             partitions=tuple(partitions),
             content_digest=digest,
             row_count=ordered.height,

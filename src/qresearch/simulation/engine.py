@@ -28,7 +28,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from itertools import pairwise
-from typing import Any
+from types import NoneType, UnionType
+from typing import Annotated, Any, Union, get_args, get_origin
 
 import polars as pl
 from pydantic import Field
@@ -122,28 +123,36 @@ class SimulationResult:
 
 def _schema_for(model: type[FrozenModel]) -> dict[str, pl.DataType]:
     """Polars schema from a pydantic model, so empty ledgers still have typed columns."""
-    from enum import Enum
+    return {name: _polars_dtype(info.annotation) for name, info in model.model_fields.items()}
 
-    out: dict[str, pl.DataType] = {}
-    for name, info in model.model_fields.items():
-        annotation = info.annotation
-        origin = getattr(annotation, "__origin__", None)
-        args = getattr(annotation, "__args__", ())
-        if origin is not None and type(None) in args:
-            annotation = next(a for a in args if a is not type(None))
-        if annotation is float:
-            out[name] = pl.Float64()
-        elif annotation is int:
-            out[name] = pl.Int64()
-        elif annotation is bool:
-            out[name] = pl.Boolean()
-        elif annotation is _dt.datetime or "datetime" in str(annotation):
-            out[name] = pl.Datetime("us", "UTC")
-        elif isinstance(annotation, type) and issubclass(annotation, Enum):
-            out[name] = pl.String()
-        else:
-            out[name] = pl.String()
-    return out
+
+def _polars_dtype(annotation: Any) -> pl.DataType:
+    """Resolve ``Optional``, ``Annotated``, ``NewType`` and enums to a Polars dtype.
+
+    Getting this wrong is silent: an optional float persisted as a string still round
+    trips through Parquet, it just stops being a number.
+    """
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is Annotated:
+        return _polars_dtype(args[0])
+    if origin is Union or origin is UnionType:
+        remaining = [a for a in args if a is not NoneType]
+        return _polars_dtype(remaining[0]) if len(remaining) == 1 else pl.String()
+    supertype = getattr(annotation, "__supertype__", None)
+    if supertype is not None:
+        return _polars_dtype(supertype)
+    if annotation is bool:
+        return pl.Boolean()
+    if annotation is int:
+        return pl.Int64()
+    if annotation is float:
+        return pl.Float64()
+    if annotation is _dt.datetime:
+        return pl.Datetime("us", "UTC")
+    if annotation is _dt.timedelta:
+        return pl.Duration("us")
+    return pl.String()
 
 
 @dataclass(slots=True)

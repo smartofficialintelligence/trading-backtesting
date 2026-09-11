@@ -133,6 +133,7 @@ def ingest_bars(
         validation=report,
         created_by=created_by,
         created_at=now_utc(),
+        instruments=[i for i in request.instruments if i.instrument_id in identity.instrument_ids],
     )
     return IngestOutcome(manifest=manifest, report=report, reused_existing=existed)
 

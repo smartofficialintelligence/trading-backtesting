@@ -9,7 +9,7 @@ fails loudly instead of leaving a default economic assumption silently in place.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -17,6 +17,9 @@ from qresearch.config import FrozenModel
 from qresearch.data.adapters.base import ColumnMapping
 from qresearch.data.contracts import AssetClass, BarSize, Instrument
 from qresearch.data.manifests import NormalizationPolicy
+
+if TYPE_CHECKING:
+    from qresearch.application.run_backtest import BacktestConfig
 
 
 class IngestConfig(FrozenModel):
@@ -46,6 +49,13 @@ def load_yaml(path: Path | str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a YAML mapping at the top level")
     return data
+
+
+def load_backtest_config(path: Path | str) -> BacktestConfig:
+    """Parse and validate a backtest config file (lax at the text boundary, see above)."""
+    from qresearch.application.run_backtest import BacktestConfig
+
+    return BacktestConfig.model_validate(load_yaml(path), strict=False)
 
 
 def load_ingest_config(path: Path | str) -> IngestConfig:

@@ -5,12 +5,12 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+from tests.golden.conftest import Scripted, at, bars, free_config, run
 
 from qresearch.simulation.constraints import ConstraintConfig
 from qresearch.simulation.engine import EndOfRunPolicy
 from qresearch.simulation.events import OrderStatus, RejectionReason
 from qresearch.simulation.execution import CostConfig, ExecutionConfig
-from tests.golden.conftest import Scripted, at, bars, free_config, run
 
 SIX = [(m, 100.0 + 2 * m, 101.0 + 2 * m, 100.0) for m in range(6)]
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 
 import polars as pl
+from tests.golden.conftest import at, bars, free_config, instrument
 
 from qresearch.features.pipeline import compute_features
 from qresearch.features.technical import LaggedReturn
@@ -12,7 +13,6 @@ from qresearch.research.splits import TimeRange
 from qresearch.simulation.engine import run_simulation
 from qresearch.strategy.contracts import DecisionContext
 from qresearch.strategy.examples import BuyAndHold, LaggedSignal
-from tests.golden.conftest import at, bars, free_config, instrument
 
 # Closes alternate: up on even bars, down on odd bars.
 ZIGZAG = [(m, 100.0, 101.0 if m % 2 == 0 else 99.0, 100.0) for m in range(8)]

@@ -140,3 +140,56 @@ multi-instrument gap does (tested).
 
 Plan sec. 10 deferred borrow modelling. `allow_short=False` is the default; when
 enabled, a `short_position` warning is recorded on every run that opens one.
+
+## D21. Splits assign rows by `available_at`; embargo is a training exclusion — **autonomous**
+
+A split is a period of knowledge. A bar whose interval is in the training range but which
+published after the cutoff belongs to the period it published in. Embargo ranges (after
+each fold's test) are recorded and subtracted from later folds' training predicates
+rather than modelled as contiguous ranges, since a chronological walk-forward's next
+training window legitimately overlaps the previous test.
+
+## D22. The purge must be stated — **autonomous**
+
+`WalkForwardPlan` refuses `purge == 0` unless `label_horizon` is given (even as zero).
+Effective purge is `max(purge, label_horizon)` and is applied both after training and
+after validation.
+
+## D23. `run_id` hashes everything economic, including `code_revision`; not the label — **autonomous**
+
+A run under a dirty worktree gets `<sha>-dirty-<diff hash>`. Renaming a run does not make
+it a new run; changing the code, a feature's fingerprint, the cost scenario, the seed, or
+the experiment id does.
+
+## D24. Identical spec: reuse; divergent economics: keep aside and raise — **autonomous**
+
+`LocalArtifactStore.finalize` compares the economic digest (fills + equity curve, sorted,
+bookkeeping columns dropped) against an existing run of the same id. Equal → the new
+directory is discarded and the existing result returned. Different → the new directory
+moves to `conflicts/` and `ReproducibilityError` is raised. The original is never
+overwritten. Failed runs go to `failed/` and never appear in `list_runs()`.
+
+## D25. Per-role aggregates stitch fold curves — **autonomous**
+
+Each fold's simulation starts from `initial_cash`. The aggregate curve for a role scales
+each fold's equity so it starts where the previous fold ended, then re-scales to the
+first fold's starting equity. Metrics on that curve are the "walk-forward test" numbers;
+per-fold metrics are kept alongside for stability review.
+
+## D26. `period_hit_rate` is a period-level proxy — **autonomous**
+
+Fraction of bar periods with positive return among periods that began with non-zero gross
+exposure. Round-trip trade attribution is not attempted in the MVP; the metric is named
+to say what it is.
+
+## D27. Cost scenarios are named presets, part of run identity — **autonomous**
+
+`base`, `free`, `low`, `stressed`. A sensitivity run is one run per scenario under the
+same experiment id. Custom presets belong in configuration when the need arises.
+
+## D28. Manifests carry `Instrument` definitions outside the identity hash — **autonomous**
+
+The simulator needs quantity increments and the calendar; the catalog previously stored
+only ids. Definitions are stored on the manifest but excluded from `dataset_id` since an
+alias correction is not a data change. Manifests written before this field default to
+empty and are refused by the orchestrator with a re-ingest message.
