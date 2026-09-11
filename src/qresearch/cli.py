@@ -93,6 +93,30 @@ def _root(
 
 
 @app.command()
+def ui(
+    runs: RunsOption = Path("runs"),
+    root: RootOption = Path("data"),
+    host: Annotated[
+        str, typer.Option("--host", help="Bind address. Loopback by default.")
+    ] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port")] = 8000,
+) -> None:
+    """Serve the local research UI (needs the 'ui' extra).
+
+    Binds to loopback: it exposes a filesystem and has no authentication. On a remote
+    host, forward the port rather than binding publicly.
+    """
+    from qresearch.ui.app import UIUnavailableError, serve
+
+    try:
+        typer.echo(f"qresearch ui on http://{host}:{port}  (runs={runs})")
+        serve(runs, root, host=host, port=port)
+    except UIUnavailableError as error:
+        typer.secho(str(error), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from error
+
+
+@app.command()
 def version() -> None:
     """Print the package version."""
     typer.echo(__version__)

@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: uv sync --extra dev --extra oracle --frozen
+      - run: uv sync --extra dev --extra oracle --extra ui --frozen
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run mypy

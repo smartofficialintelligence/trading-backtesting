@@ -27,6 +27,13 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-pyyaml>=6.0",
+    # starlette's TestClient needs this to exercise the UI routes.
+    "httpx2>=0.1",
+]
+ui = [
+    # Local research UI. Optional: the CLI and library work without it.
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
 ]
 oracle = [
     # Independent simulator used only by the differential test in
@@ -68,7 +75,12 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # starlette's TestClient trips an anyio alias deprecation on import. Third-party and
+    # out of our control; matched by message so our own deprecations still fail the suite.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
 markers = [
     # Hits a live venue. Deselected by default so the suite is hermetic and CI does not
     # depend on a third party being reachable: QRESEARCH_NETWORK_TESTS=1 to enable.

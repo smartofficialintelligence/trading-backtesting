@@ -389,3 +389,35 @@ day of BTC/ETH that took the file from 388 KB to 140 KB with the shape intact.
 Untrusted text (labels, warning messages) is escaped; a test asserts no raw tag can reach
 the document and that the tag tree stays balanced, rather than grepping for a payload
 substring that appears harmlessly escaped.
+
+## D46. The UI is a layer over the CLI, never a parallel path — reviewed with the user
+
+The report (D45) answered "read one archived run"; it does not answer "explore many runs"
+or "author a strategy", which is what a research workbench needs. Both exist now: the
+report stays the archival artifact, the app is the exploratory view.
+
+The rule that makes this safe is that **the UI must never create something the CLI cannot
+reproduce.** Everything it does resolves to the same `BacktestConfig` -> `RunSpec` ->
+`run_id` path that YAML uses, because the platform is already `kind` + `params` over
+registries. A UI-only code path would silently void the reproducibility guarantees the
+rest of the system is built on. Today the app is strictly read-only and a test asserts the
+route table exposes only GET/HEAD; when the launcher lands, that test is what has to be
+replaced with an equivalent guarantee, not deleted.
+
+Server-rendered HTML with the same inline-SVG helpers as the report: no build step, no
+node toolchain, no JS framework to keep current inside a Python project. The per-run view
+serves the archival `report.html` itself, so the browser and the stored file cannot drift.
+
+Binds to loopback with no authentication, deliberately: it exposes a filesystem and will
+eventually execute strategy code. On a remote host, forward the port.
+
+## D47. UI and oracle dependencies are optional extras — **autonomous**
+
+`fastapi`/`uvicorn` (`ui`) and `backtesting`/`pandas` (`oracle`) are extras, not runtime
+dependencies. The library and CLI must install and work without either. Both are installed
+in CI so their tests actually run.
+
+Relatedly, `filterwarnings = error` gained one narrowly-scoped exemption: starlette's
+TestClient trips an `anyio` alias deprecation on import. It is matched by message so our
+own deprecations still fail the suite — a blanket ignore would have been the easy wrong
+answer.

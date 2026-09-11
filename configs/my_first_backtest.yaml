@@ -1,0 +1,56 @@
+# Crypto lagged-return momentum on the synthetic 24x7 sample.
+#
+#   qresearch data demo --root data --market crypto
+#   qresearch backtest run -c configs/examples/crypto_momentum.yaml --root data --runs runs
+#
+# Replace dataset_id with the id printed by `data demo`.
+
+dataset_id: ds_908d3f19b107e5b0
+label: crypto momentum smoke
+experiment_id: crypto-momentum
+
+features:
+  - kind: lagged_return
+    params: { lag: 1 }
+  - kind: rolling_volatility
+    params: { window: 10 }
+  - kind: relative_volume
+    params: { window: 10 }
+
+transforms:
+  - kind: zscore
+    columns: [ret_1]
+
+strategy:
+  kind: lagged_signal
+  params: { feature: ret_1, weight: 0.4, threshold: 0.0 }
+
+simulation:
+  initial_cash: 100000
+  execution:
+    submission_latency: PT0S
+    order_latency: PT1S
+    fill_rule: next_open_after_eligibility
+    expire_after: PT5M
+    participation_cap: 0.1
+    liquidity_lookback_bars: 10
+  constraints:
+    allow_short: false
+    max_gross_exposure: 1.0
+    max_position_weight: 0.6
+  end_of_run: mark
+
+plan:
+  kind: rolling
+  train: PT6H
+  validation: PT2H
+  test: PT2H
+  purge: PT2M
+  label_horizon: PT1M
+  warmup: PT1H
+
+cost_scenarios: [base, free, stressed]
+# Both fill rules run; the textbook rule leads (it is the headline) and the conservative
+# open(N+2) rule follows. The pair brackets the execution assumption.
+fill_rules: [open_of_current_bar, next_open_after_eligibility]
+seed: 0
