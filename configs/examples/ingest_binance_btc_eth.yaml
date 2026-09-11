@@ -1,0 +1,60 @@
+# Ingest real Binance spot klines.
+#
+#   qresearch data ingest -c configs/examples/ingest_binance_btc_eth.yaml --root data
+#
+# Adjust the start/end in source_uri for the window you want. Historical klines are
+# immutable, so re-running this resolves to the same dataset_id.
+
+source_uri: "binance://spot?interval=1m&start=2024-03-04T00:00:00Z&end=2024-03-05T00:00:00Z"
+source_name: "binance:spot-klines-v3"
+bar_size: 1m
+asset_class: crypto
+venue: BINANCE
+calendar_id: "24x7:1"
+normalization_version: "1"
+expect_complete_grid: true
+
+policy:
+  # Verified empirically against raw aggTrades, not read from the docs:
+  # tests/contracts/test_binance_contract.py
+  timestamp_label: bar_start
+
+  # NOT a venue property. Binance serves a closed kline immediately -- measured at 1.1-1.4s
+  # after close, entirely network round trip. This value is *your collection latency*:
+  # poll interval + RTT for a REST puller. Two seconds is a reasonable figure for a
+  # local poller; raise it if you batch, and prefer a live recorder that stamps real
+  # receipt times over any assumption here.
+  publication_latency: PT2S
+
+  price_adjustment: not_applicable
+  missing_bars: omit
+  # Binance returns each closed kline once; a duplicate would mean a pagination fault.
+  duplicates: error
+  revisions: as_known
+  volume_unit: base_asset
+
+instruments:
+  - instrument_id: "CRYPTO:BTCUSDT"
+    asset_class: crypto
+    venue: BINANCE
+    quote_currency: USDT
+    base_currency: BTC
+    price_increment: "0.01"
+    quantity_increment: "0.00001"
+    calendar_id: "24x7:1"
+    aliases:
+      - symbol: BTCUSDT
+        source: "binance:spot-klines-v3"
+        effective_from: "2017-08-17T00:00:00Z"
+  - instrument_id: "CRYPTO:ETHUSDT"
+    asset_class: crypto
+    venue: BINANCE
+    quote_currency: USDT
+    base_currency: ETH
+    price_increment: "0.01"
+    quantity_increment: "0.00001"
+    calendar_id: "24x7:1"
+    aliases:
+      - symbol: ETHUSDT
+        source: "binance:spot-klines-v3"
+        effective_from: "2017-08-17T00:00:00Z"

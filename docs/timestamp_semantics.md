@@ -50,11 +50,13 @@ evidence in the adapter's contract test.
 
 ### Known conventions
 
-| Source | Label | Notes |
+| Source | Label | How it was established |
 |---|---|---|
+| `binance:spot-klines-v3` | `bar_start` | Kline `field[0]` compared against raw `aggTrades` in `[field[0], field[0]+60s)` for BTCUSDT at 2024-03-04 12:00Z: open/high/low/close matched the first/max/min/last trade exactly. Frozen in `tests/contracts/data/`. `field[6]` is the inclusive close (`+59,999 ms`) and is cross-checked on every ingest. |
 | `synthetic:bars-v1` | `bar_start` | Test fixture; also emits `available_at` and `revision` columns. |
 
-Add a row for every real provider adapter as it lands.
+Add a row for every real provider adapter as it lands, and say how the label was
+*established* -- reading the documentation does not count.
 
 ## Availability
 

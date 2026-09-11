@@ -16,6 +16,7 @@ The MVP defined in the development plan (Stages 0–5) is implemented. Not live 
 
 | layer | what exists |
 |---|---|
+| providers | **Binance spot klines** (real, live-verified) and a local CSV/Parquet adapter; timestamp label proven against raw trades |
 | data | immutable content-addressed Parquet datasets; required bar-label convention; point-in-time reads with a mandatory `as_of`; validation with a calendar-aware session check; 1m→5m resampling; DuckDB views |
 | calendars | `24x7:1` and `XNYS:1` (holidays, observance, early closes, DST) |
 | features | causal expressions with derived availability; gap-aware windows; cross-sectional ranks with batch availability; session features; fold-owned fitted transforms; leakage checkers in the package |
@@ -29,6 +30,7 @@ The MVP defined in the development plan (Stages 0–5) is implemented. Not live 
 uv sync --extra dev
 
 uv run qresearch data demo --root data                     # synthetic 2-asset crypto sample
+uv run qresearch data ingest -c configs/examples/ingest_binance_btc_eth.yaml --root data   # real data
 uv run qresearch data inspect <dataset-id> --root data
 uv run qresearch data head <dataset-id> --root data --as-of 2024-03-04T00:33:00Z
 
@@ -55,7 +57,9 @@ uv run ruff format . && uv run ruff check . && uv run mypy && uv run pytest
 uv run python scripts/benchmark.py --instruments 5 --days 5     # baseline timings
 ```
 
-`pytest` runs with `filterwarnings = error`; a deprecation is a failure.
+`pytest` runs with `filterwarnings = error`; a deprecation is a failure. Live-venue tests
+are deselected by default — `QRESEARCH_NETWORK_TESTS=1 uv run pytest -m network` to run
+them.
 
 ## Layout
 

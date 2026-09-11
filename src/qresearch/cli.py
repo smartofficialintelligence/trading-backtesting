@@ -27,7 +27,9 @@ from qresearch.application.run_backtest import (
 )
 from qresearch.artifacts.contracts import RunResult
 from qresearch.artifacts.local import LocalArtifactStore, economic_digest
-from qresearch.data.adapters.base import ColumnMapping, IngestRequest
+from qresearch.data.adapters.base import BarAdapter, ColumnMapping, IngestRequest
+from qresearch.data.adapters.binance import SCHEME as BINANCE_SCHEME
+from qresearch.data.adapters.binance import BinanceKlineAdapter
 from qresearch.data.adapters.csv_parquet import LocalFileBarAdapter
 from qresearch.data.calendars import attach_sessions, get_calendar
 from qresearch.data.catalog import DatasetCatalog, DatasetNotFoundError
@@ -119,7 +121,7 @@ def data_ingest(
         outcome = ingest_bars(
             request,
             catalog=DatasetCatalog(root),
-            adapter=LocalFileBarAdapter(),
+            adapter=_adapter_for(spec.source_uri),
             asset_class=spec.asset_class,
             venue=spec.venue,
             calendar_id=spec.calendar_id,
@@ -641,6 +643,16 @@ def _transposed(frame: pl.DataFrame, key: str = "run_id") -> str:
 
 def _fmt(value: float | None, spec: str) -> str:
     return "n/a" if value is None else format(value, spec)
+
+
+def _adapter_for(source_uri: str) -> BarAdapter:
+    """Pick an adapter from the source URI's scheme.
+
+    A local path (or ``file://``) reads CSV/Parquet; ``binance://`` pulls spot klines.
+    """
+    if source_uri.startswith(f"{BINANCE_SCHEME}://"):
+        return BinanceKlineAdapter()
+    return LocalFileBarAdapter()
 
 
 def _resolve(root: Path, dataset: str) -> DatasetManifest:

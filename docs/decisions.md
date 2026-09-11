@@ -271,3 +271,43 @@ The user asked why not both, and they were right. `run_id` hashes the resolved s
 configuration groups together across code edits. A docstring typo no longer scatters a
 session's results. Both are stored, indexed, and shown; `runs list --config-id` filters.
 Reuse semantics are unchanged, so reproducibility does not weaken.
+
+## D38. Binance label established empirically, not from documentation — **autonomous**
+
+`field[0]` is `bar_start`. Established by pulling BTCUSDT 2024-03-04 12:00Z and rebuilding
+the bar from raw `aggTrades` in `[field[0], field[0]+60s)`: open/high/low/close matched
+the first/max/min/last trade *exactly*. The kline and the independently derived values are
+frozen in `tests/contracts/data/` so the proof runs offline on every test run; a
+`network`-marked twin re-pulls and checks the fixture still describes reality.
+
+Reading the documentation would have given the same answer here, but it is not evidence,
+and the failure mode (a dataset silently shifted one bar into the future) is invisible in
+results. `docs/timestamp_semantics.md` now asks *how* each label was established.
+
+## D39. Publication latency is a collection property, not a venue property — **autonomous**
+
+Measured at two minute boundaries: a closed kline is served 1.1–1.4 s after close, and the
+RTT was 1.1–1.4 s — the entire delay is the round trip. Binance publishes closed klines
+essentially instantly.
+
+So `publication_latency` for a REST puller is *your* poll interval plus RTT, not something
+the adapter can know. It stays a required policy value, the example config says so at
+length, and the honest alternative — a live recorder stamping real receipt times into
+`available_at` — is named. The adapter never invents a latency.
+
+## D40. Only closed bars are ingested — **autonomous**
+
+A kline whose interval has not ended carries partial OHLCV, and ingesting one writes a bar
+that later changes — breaking dataset immutability and back-dating a value that did not
+exist. The adapter drops any kline with `close_time >= now` and records the count; if
+nothing closed, it raises rather than writing an empty dataset.
+
+Also cross-checks the venue's own `field[6]` against the derived `bar_end` on every
+ingest: a mismatch means the interval is not what the adapter assumes, and it refuses
+rather than writing a dataset that may be shifted in time.
+
+## D41. Network tests are deselected by default — **autonomous**
+
+The suite must be hermetic and CI must not depend on a third party being reachable.
+Live-venue tests carry a `network` marker and skip unless `QRESEARCH_NETWORK_TESTS=1`.
+The offline fixture carries the contract; the network test is a freshness check.

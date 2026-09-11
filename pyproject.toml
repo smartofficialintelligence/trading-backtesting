@@ -63,3 +63,8 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
 filterwarnings = ["error"]
+markers = [
+    # Hits a live venue. Deselected by default so the suite is hermetic and CI does not
+    # depend on a third party being reachable: QRESEARCH_NETWORK_TESTS=1 to enable.
+    "network: requires outbound network access to a market-data venue",
+]
