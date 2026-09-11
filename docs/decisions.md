@@ -221,3 +221,12 @@ Wired into `ingest_bars` via the dataset's calendar; the 24x7 calendar never fla
 
 Plan §9 says not to encode an arbitrary throughput promise. `scripts/benchmark.py` records
 wall-clock and peak RSS for a synthetic workload so later optimisation has a baseline.
+
+## D34. Both fill rules run by default — reviewed with the user
+
+Follows from the D14 discussion. `fill_rules` defaults to both rules, so a sensitivity
+run is cost scenarios × fill rules. Compute is linear (one more simulation per scenario);
+the decisions diverge from the first fill, so the runs cannot share a simulation. The
+conservative rule remains the default for single-rule runs and for the first line of any
+report. The gap between the twins is pinned by a golden test to
+`quantity × (open(N+2) − open(N+1))` per signal fill.

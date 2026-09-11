@@ -11,8 +11,9 @@ exists in the code and the residual risk that a person still has to judge.
 - [ ] **Availability filter on every read** — `BarQuery.as_of` is mandatory; unfiltered
       reads require a stated reason. `grep scan_all_unfiltered` in research code.
 - [ ] **No same-bar or next-open fills** — the engine fills a signal on bar N at open(N+2)
-      by default. If `fill_rule: open_of_current_bar` appears in the run, the
-      `optimistic_fill_rule` warning is set; treat results as an upper bound.
+      by default, and every sensitivity run also produces the `open_of_current_bar` twin
+      (flagged `optimistic_fill_rule`). Read the pair as a bracket: if the optimistic run
+      carries most of the return, the edge is inside the bar after the signal.
 - [ ] **Order timestamps distinct** — every fill asserts
       `signal_at <= order_at <= eligible_at <= fill_at`.
 - [ ] **Feature availability derived, not written** — window max of input availability

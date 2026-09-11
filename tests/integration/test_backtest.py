@@ -30,7 +30,7 @@ from qresearch.research.experiments import (
 )
 from qresearch.research.walk_forward import WalkForwardPlan
 from qresearch.simulation.engine import SimulationConfig
-from qresearch.simulation.execution import ExecutionConfig
+from qresearch.simulation.execution import ExecutionConfig, FillRule
 
 T0 = dt.datetime(2024, 3, 4, tzinfo=dt.UTC)
 H = dt.timedelta(hours=1)
@@ -56,6 +56,7 @@ def config(**overrides: object) -> BacktestConfig:
             train=H, validation=30 * M, test=30 * M, purge=2 * M, warmup=10 * M
         ),
         "cost_scenarios": ("base", "free", "stressed"),
+        "fill_rules": (FillRule.NEXT_OPEN_AFTER_ELIGIBILITY,),
         "experiment_id": "exp-1",
         "label": "smoke",
     }
@@ -118,6 +119,7 @@ def test_cost_scenarios_are_separate_runs_ordered_as_expected(
     results = run_sensitivity(
         config(dataset_id=ingested.dataset_id), catalog=ingested.catalog, store=store
     )
+    results = {k[0]: v for k, v in results.items()}
     assert set(results) == {"base", "free", "stressed"}
     assert len({r.run_id for r in results.values()}) == 3
     test = {k: v.aggregate["test"] for k, v in results.items()}
@@ -284,6 +286,7 @@ def test_compare_metrics_classifies_agreement(
         catalog=ingested.catalog,
         store=store,
     )
+    results = {k[0]: v for k, v in results.items()}
     same = compare_metrics(results["base"].aggregate["test"], results["base"].aggregate["test"])
     assert set(same.values()) <= {Agreement.EXACT}
     different = compare_metrics(
@@ -302,6 +305,7 @@ def test_every_run_carries_its_known_limitations(
         catalog=ingested.catalog,
         store=store,
     )
+    results = {k[0]: v for k, v in results.items()}
     base_codes = {w.code for w in results["base"].warnings}
     assert {"static_universe", "assumed_spread"} <= base_codes
     free_codes = {w.code for w in results["free"].warnings}
@@ -331,3 +335,68 @@ def test_runs_log_with_their_run_id(ingested: IngestedFixture, store: LocalArtif
         ln["run_id"] == result.run_id for ln in lines if ln["message"].startswith(("run ", "fold "))
     )
     assert any(ln["message"] == "fold complete" and ln["role"] == "test" for ln in lines)
+
+
+# -- fill-rule bracket -------------------------------------------------------------------------
+
+
+def test_the_default_brackets_the_fill_assumption() -> None:
+    cfg = BacktestConfig(
+        dataset_id="x",
+        strategy=StrategyRef(kind="buy_and_hold"),
+        plan=WalkForwardPlan(train=H, test=H, purge=M),
+    )
+    assert cfg.fill_rules == (FillRule.NEXT_OPEN_AFTER_ELIGIBILITY, FillRule.OPEN_OF_CURRENT_BAR)
+
+
+def test_fill_rules_are_separate_runs_and_the_optimistic_one_fills_earlier(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    cfg = config(
+        dataset_id=ingested.dataset_id,
+        cost_scenarios=("base",),
+        fill_rules=(FillRule.NEXT_OPEN_AFTER_ELIGIBILITY, FillRule.OPEN_OF_CURRENT_BAR),
+    )
+    results = run_sensitivity(cfg, catalog=ingested.catalog, store=store)
+    assert set(results) == {
+        ("base", FillRule.NEXT_OPEN_AFTER_ELIGIBILITY),
+        ("base", FillRule.OPEN_OF_CURRENT_BAR),
+    }
+    conservative = results[("base", FillRule.NEXT_OPEN_AFTER_ELIGIBILITY)]
+    optimistic = results[("base", FillRule.OPEN_OF_CURRENT_BAR)]
+    assert conservative.run_id != optimistic.run_id
+    assert "optimistic_fill_rule" in {w.code for w in optimistic.warnings}
+    assert "optimistic_fill_rule" not in {w.code for w in conservative.warnings}
+
+    # Same first decision, earlier fill under the optimistic rule.
+    c_orders = store.load_frame(conservative.run_id, "orders").sort("signal_at")
+    o_orders = store.load_frame(optimistic.run_id, "orders").sort("signal_at")
+    c_fills = store.load_frame(conservative.run_id, "fills").sort("fill_at")
+    o_fills = store.load_frame(optimistic.run_id, "fills").sort("fill_at")
+    assert c_orders.item(0, "signal_at") == o_orders.item(0, "signal_at")
+    assert o_fills.item(0, "fill_at") < c_fills.item(0, "fill_at")
+
+    view = compare(store, [conservative.run_id, optimistic.run_id], role="test")
+    assert set(view.get_column("fill_rule").to_list()) == {r.value for r in FillRule}
+
+
+def test_backtest_config_fill_rules_load_from_yaml(
+    tmp_path: Path, ingested: IngestedFixture
+) -> None:
+    path = tmp_path / "bt.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "dataset_id": ingested.dataset_id,
+                "strategy": {"kind": "buy_and_hold", "params": {"weights": {"CRYPTO:BTCUSD": 0.5}}},
+                "plan": {
+                    "kind": "rolling",
+                    "train": "PT1H",
+                    "test": "PT30M",
+                    "label_horizon": "PT5M",
+                },
+                "fill_rules": ["open_of_current_bar"],
+            }
+        )
+    )
+    assert load_backtest_config(path).fill_rules == (FillRule.OPEN_OF_CURRENT_BAR,)

@@ -28,6 +28,14 @@ existed and is optimistic by up to a bar of latency; every run using it records 
 `optimistic_fill_rule` warning. It exists because 5-minute research is materially
 distorted by a 5-minute delay.
 
+**Both rules run by default.** `BacktestConfig.fill_rules` defaults to both, so every
+sensitivity run produces a conservative and an optimistic result per cost scenario. For a
+given signal fill the two differ by exactly `quantity × (open(N+2) − open(N+1))` and in
+nothing else, so the gap between them is the size of the assumption, as a number. A
+strategy that works under the conservative rule is robust to it; one that works only
+under the optimistic rule has its edge in the seconds after a bar close — real, but not
+something bar data can resolve. `--fill-rule` selects one.
+
 Latencies: `submission_latency` (signal → order) and `order_latency` (order → eligible),
 both configurable, default 0 s and 1 s. Every fill asserts
 `signal_at <= order_at <= eligible_at <= fill_at`.

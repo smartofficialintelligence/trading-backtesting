@@ -88,9 +88,12 @@ def test_a_misspelled_config_key_is_rejected(tmp_path: Path) -> None:
 # -- Stage 5 workflow ----------------------------------------------------------------------------
 
 
-def _run_id_from(output: str, scenario: str = "base") -> str:
-    line = next(ln for ln in output.splitlines() if ln.startswith(f"== scenario {scenario}:"))
-    return line.split(":", 1)[1].strip()
+def _run_id_from(
+    output: str, scenario: str = "base", rule: str = "next_open_after_eligibility"
+) -> str:
+    prefix = f"== scenario {scenario} / fill rule {rule}:"
+    line = next(ln for ln in output.splitlines() if ln.startswith(prefix))
+    return line[len(prefix) :].strip()
 
 
 def _write_config(tmp_path: Path, example: str, dataset_id: str) -> Path:
@@ -119,8 +122,11 @@ def test_crypto_workflow_from_demo_to_reproduce(tmp_path: Path) -> None:
     ran = runner.invoke(app, ["backtest", "run", "-c", str(config), "--root", root, "--runs", runs])
     assert ran.exit_code == 0, ran.output
     for scenario in ("base", "free", "stressed"):
-        assert f"== scenario {scenario}:" in ran.output
+        for rule in ("next_open_after_eligibility", "open_of_current_bar"):
+            assert f"== scenario {scenario} / fill rule {rule}:" in ran.output
     assert "fill rule        next_open_after_eligibility" in ran.output
+    assert "fill rule        open_of_current_bar" in ran.output
+    assert "optimistic_fill_rule" in ran.output
     assert "[test      ]" in ran.output and "[validation]" in ran.output
     assert "annualisation    24x7" in ran.output
     assert "docs/leakage_checklist.md" in ran.output

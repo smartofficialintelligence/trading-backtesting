@@ -24,7 +24,6 @@ from qresearch.application.run_backtest import (
     execute,
     resolve_spec,
     run_backtest,
-    run_sensitivity,
 )
 from qresearch.artifacts.contracts import RunResult
 from qresearch.artifacts.local import LocalArtifactStore, economic_digest
@@ -50,6 +49,7 @@ from qresearch.features.registry import build_feature
 from qresearch.ids import DatasetId, RunId
 from qresearch.logging import configure
 from qresearch.research.experiments import build_run_index, compare, fold_table, run_table
+from qresearch.simulation.execution import FillRule
 from qresearch.time import ensure_utc
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help=__doc__)
@@ -405,27 +405,44 @@ def backtest_run(
         str | None,
         typer.Option("--scenario", help="One cost scenario, or omit to run all configured."),
     ] = None,
+    fill_rule: Annotated[
+        str | None,
+        typer.Option("--fill-rule", help="One fill rule, or omit to run all configured."),
+    ] = None,
     force: Annotated[
         bool, typer.Option("--force", help="Re-execute even if the run exists.")
     ] = False,
 ) -> None:
-    """Run the configured walk-forward backtest (one run per cost scenario)."""
+    """Run the configured walk-forward backtest: one run per cost scenario x fill rule."""
     cfg = load_backtest_config(config)
     catalog, store = DatasetCatalog(root), LocalArtifactStore(runs)
+    scenarios = (scenario,) if scenario is not None else cfg.cost_scenarios
     try:
-        if scenario is not None:
-            results = {
-                scenario: run_backtest(
-                    cfg, catalog=catalog, store=store, cost_scenario=scenario, force=force
+        rules = (FillRule(fill_rule),) if fill_rule is not None else cfg.fill_rules
+    except ValueError as error:
+        typer.secho(
+            f"unknown fill rule {fill_rule!r}; known: {[r.value for r in FillRule]}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2) from error
+    results = {}
+    try:
+        for name in scenarios:
+            for rule in rules:
+                results[(name, rule)] = run_backtest(
+                    cfg,
+                    catalog=catalog,
+                    store=store,
+                    cost_scenario=name,
+                    fill_rule=rule,
+                    force=force,
                 )
-            }
-        else:
-            results = run_sensitivity(cfg, catalog=catalog, store=store, force=force)
     except (DatasetNotFoundError, KeyError, ValueError) as error:
         typer.secho(f"FAILED: {error}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from error
-    for name, result in results.items():
-        typer.secho(f"== scenario {name}: {result.run_id}", bold=True)
+    for (name, rule), result in results.items():
+        typer.secho(f"== scenario {name} / fill rule {rule.value}: {result.run_id}", bold=True)
         _print_result(result, store)
     typer.echo("")
     typer.echo("assumptions to review: docs/leakage_checklist.md")

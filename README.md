@@ -44,7 +44,8 @@ uv run qresearch runs reproduce <run-id> --root data --runs runs
 
 Two things to internalise before reading any number: under the default fill rule a signal
 on bar N fills at **open(N+2)** (bar N publishes no earlier than bar N+1's open, which has
-already printed); and every read requires `--as-of`. Both are explained in the docs above.
+already printed), and every run also produces the textbook "next open" twin so the two
+bracket the truth; and every read requires `--as-of`. Both are explained in the docs above.
 
 ## Development
 

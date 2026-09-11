@@ -52,7 +52,7 @@ from qresearch.research.splits import DataSplit, SplitRole, TimeRange
 from qresearch.research.walk_forward import FixedSplitPlan, Fold, WalkForwardPlan, generate_folds
 from qresearch.simulation.engine import SimulationConfig, run_simulation
 from qresearch.simulation.events import WarningRecord
-from qresearch.simulation.execution import CostConfig, SlippageConfig, SlippageKind
+from qresearch.simulation.execution import CostConfig, FillRule, SlippageConfig, SlippageKind
 from qresearch.strategy.registry import build_strategy
 from qresearch.time import as_utc_scalar, now_utc
 
@@ -88,6 +88,13 @@ class BacktestConfig(FrozenModel):
     """Defaults to the dataset's full range."""
 
     cost_scenarios: tuple[str, ...] = Field(default=("base",), min_length=1)
+    fill_rules: tuple[FillRule, ...] = Field(
+        default=(FillRule.NEXT_OPEN_AFTER_ELIGIBILITY, FillRule.OPEN_OF_CURRENT_BAR), min_length=1
+    )
+    """Every sensitivity run brackets the fill assumption by default: the conservative
+    rule and the textbook rule differ by exactly one bar's move on each signal fill, and
+    a strategy whose edge lives inside that bar should be seen, not silently zeroed."""
+
     seed: int = 0
     evaluate_validation: bool = True
     experiment_id: str | None = None
@@ -100,6 +107,7 @@ def resolve_spec(
     *,
     cost_scenario: str,
     code_revision: str | None,
+    fill_rule: FillRule | None = None,
 ) -> RunSpec:
     if cost_scenario not in COST_SCENARIOS:
         raise KeyError(f"unknown cost scenario {cost_scenario!r}; known: {sorted(COST_SCENARIOS)}")
@@ -109,7 +117,10 @@ def resolve_spec(
         raise ValueError(f"instruments {unknown} are not in dataset {manifest.dataset_id}")
     fingerprints = tuple(build_feature(f.kind, f.params).spec.fingerprint for f in config.features)
     execution = config.simulation.execution.model_copy(
-        update={"costs": COST_SCENARIOS[cost_scenario]}
+        update={
+            "costs": COST_SCENARIOS[cost_scenario],
+            "fill_rule": fill_rule or config.simulation.execution.fill_rule,
+        }
     )
     simulation = config.simulation.model_copy(update={"execution": execution})
     return RunSpec(
@@ -140,13 +151,18 @@ def run_backtest(
     catalog: DatasetCatalog,
     store: LocalArtifactStore,
     cost_scenario: str = "base",
+    fill_rule: FillRule | None = None,
     force: bool = False,
 ) -> RunResult:
     """Execute (or reuse) one run. Failures are recorded and re-raised."""
     manifest = catalog.resolve(config.dataset_id)
     environment = capture_environment(seed=config.seed)
     spec = resolve_spec(
-        config, manifest, cost_scenario=cost_scenario, code_revision=environment.code_revision
+        config,
+        manifest,
+        cost_scenario=cost_scenario,
+        code_revision=environment.code_revision,
+        fill_rule=fill_rule,
     )
     if store.exists(spec.run_id) and not force:
         existing = store.load_result(spec.run_id)
@@ -169,11 +185,19 @@ def run_sensitivity(
     catalog: DatasetCatalog,
     store: LocalArtifactStore,
     force: bool = False,
-) -> dict[str, RunResult]:
-    """One run per configured cost scenario."""
+) -> dict[tuple[str, FillRule], RunResult]:
+    """One run per (cost scenario, fill rule): the assumption bracket every study carries."""
     return {
-        s: run_backtest(config, catalog=catalog, store=store, cost_scenario=s, force=force)
-        for s in config.cost_scenarios
+        (scenario, rule): run_backtest(
+            config,
+            catalog=catalog,
+            store=store,
+            cost_scenario=scenario,
+            fill_rule=rule,
+            force=force,
+        )
+        for scenario in config.cost_scenarios
+        for rule in config.fill_rules
     }
 
 
