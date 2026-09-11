@@ -72,3 +72,21 @@ by tests in both directions.
 
 `MinuteOfDay`/`DayOfWeek` read `bar_start` in UTC. Correct for 24/7 markets, causal but
 less meaningful for equities. Session features come with the calendar module.
+
+## D12. Calendars are versioned rule sets; `XNYS:1` verified for 2020-2026 — **autonomous**
+
+`data/calendars.py` encodes NYSE holidays (with observance rules), 13:00 early closes, and
+a list of ad-hoc closures (9/11, Sandy, presidential funerals). Rules are computable for
+any year but were only checked against published calendars for 2020-2026; `Juneteenth`
+is gated to `>= 2022`. Adding a closure or changing a rule is a new `calendar_id`, never
+an edit, because manifests record the id they were validated under. The plan's deferred
+"exact source availability latency" and "equity adjustment policy" remain deferred; they
+are dataset-policy fields, not calendar fields.
+
+## D13. Session lookup is a data step; session features are expressions — **autonomous**
+
+`attach_sessions(bars, calendar)` adds `session_open`/`session_close` columns; the
+session features (`MinutesSinceOpen`, `MinutesToClose`, `SessionFraction`,
+`IsEarlyClose`) read them. Forgetting the step is a clear pipeline error rather than a
+wrong feature. Bars outside any session carry nulls; that count is the natural input for
+the "session errors" validation check (wired in Stage 5 hardening if not sooner).
