@@ -10,7 +10,7 @@ from tests.golden.conftest import Scripted, at, bars, free_config, run
 from qresearch.simulation.constraints import ConstraintConfig
 from qresearch.simulation.engine import EndOfRunPolicy
 from qresearch.simulation.events import OrderStatus, RejectionReason
-from qresearch.simulation.execution import CostConfig, ExecutionConfig
+from qresearch.simulation.execution import CostConfig, ExecutionConfig, FillRule
 
 SIX = [(m, 100.0 + 2 * m, 101.0 + 2 * m, 100.0) for m in range(6)]
 
@@ -21,6 +21,7 @@ def execution(**overrides: object) -> ExecutionConfig:
         "expire_after": None,
         "participation_cap": None,
         "liquidity_lookback_bars": 1,
+        "fill_rule": FillRule.NEXT_OPEN_AFTER_ELIGIBILITY,
         "costs": CostConfig.free(),
     }
     return ExecutionConfig.model_validate(base | overrides)

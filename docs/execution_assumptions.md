@@ -13,28 +13,33 @@ strategy code.
 
 ## When an order can fill
 
-Default: `FillRule.NEXT_OPEN_AFTER_ELIGIBILITY`. An order fills at the first bar-open
-event at or after its `eligible_at`, processed in a later clock step than the decision
-that created it.
+Default: `FillRule.OPEN_OF_CURRENT_BAR` — the conventional "next bar open". An order
+fills at `eligible_at`, at the open price of the bar containing it.
 
-Consequence worth internalising: with contiguous bars, bar N is published no earlier than
-`bar_end(N) == bar_start(N+1)`, so bar N+1's open has already printed when a decision on
-bar N is made. **A signal on bar N fills at open(N+2)** under any non-negative latency.
-This is one bar more conservative than the textbook "next open" assumption.
+It is optimistic: the open of bar N+1 prints at `bar_end(N)`, a few seconds before the
+order could exist, so any edge inside those seconds is captured for free. Every run using
+it records an `optimistic_fill_rule` warning. It is nonetheless the closer estimate of a
+real fill — which lands a few seconds into bar N+1, not a full bar later — and its bias
+has a known direction and size.
 
-Optional: `FillRule.OPEN_OF_CURRENT_BAR` fills at `eligible_at` at the open price of the
-bar containing it — the textbook assumption. It uses a print from before the order
-existed and is optimistic by up to a bar of latency; every run using it records an
-`optimistic_fill_rule` warning. It exists because 5-minute research is materially
-distorted by a 5-minute delay.
+Worth knowing where the convention comes from: daily-frequency research, where "fill at
+the next open" is unambiguously sound because hours separate the close from the open. At
+intraday frequency the same phrase makes a much weaker claim. That is why it warns, and
+why the other rule exists.
 
-**Both rules run by default.** `BacktestConfig.fill_rules` defaults to both, so every
-sensitivity run produces a conservative and an optimistic result per cost scenario. For a
-given signal fill the two differ by exactly `quantity × (open(N+2) − open(N+1))` and in
-nothing else, so the gap between them is the size of the assumption, as a number. A
-strategy that works under the conservative rule is robust to it; one that works only
-under the optimistic rule has its edge in the seconds after a bar close — real, but not
-something bar data can resolve. `--fill-rule` selects one.
+Other side of the bracket: `FillRule.NEXT_OPEN_AFTER_ELIGIBILITY` fills at the first open
+at or after `eligible_at`, processed in a later clock step than the decision. With
+contiguous bars, bar N publishes no earlier than `bar_end(N) == bar_start(N+1)`, so bar
+N+1's open has already printed — **a signal on bar N fills at open(N+2)**. It can never
+use a print from before the order existed, but it misses a full bar of the move, which
+erases a genuine one-bar edge entirely.
+
+**Both rules run by default.** `BacktestConfig.fill_rules` defaults to both, textbook
+first. For a given signal fill the two differ by exactly
+`quantity × (open(N+2) − open(N+1))` and in nothing else, so the gap between them is the
+size of the assumption, as a number. If that gap is most of the return, the edge lives in
+the seconds after a bar close — real, but not something bar data can resolve.
+`--fill-rule` selects one.
 
 Latencies: `submission_latency` (signal → order) and `order_latency` (order → eligible),
 both configurable, default 0 s and 1 s. Every fill asserts

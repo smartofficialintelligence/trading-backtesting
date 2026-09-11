@@ -10,10 +10,10 @@ exists in the code and the residual risk that a person still has to judge.
       wrong. Verify against a known market event (docs/timestamp_semantics.md).
 - [ ] **Availability filter on every read** — `BarQuery.as_of` is mandatory; unfiltered
       reads require a stated reason. `grep scan_all_unfiltered` in research code.
-- [ ] **No same-bar or next-open fills** — the engine fills a signal on bar N at open(N+2)
-      by default, and every sensitivity run also produces the `open_of_current_bar` twin
-      (flagged `optimistic_fill_rule`). Read the pair as a bracket: if the optimistic run
-      carries most of the return, the edge is inside the bar after the signal.
+- [ ] **Fill timing is bracketed** — the default is the textbook "next open", flagged
+      `optimistic_fill_rule`; every sensitivity run also produces the conservative
+      open(N+2) twin. Read the pair: if the optimistic run carries most of the return,
+      the edge is in the seconds after the bar close, and bar data cannot settle it.
 - [ ] **Order timestamps distinct** — every fill asserts
       `signal_at <= order_at <= eligible_at <= fill_at`.
 - [ ] **Feature availability derived, not written** — window max of input availability

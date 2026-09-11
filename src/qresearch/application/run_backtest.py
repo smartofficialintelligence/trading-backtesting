@@ -89,11 +89,14 @@ class BacktestConfig(FrozenModel):
 
     cost_scenarios: tuple[str, ...] = Field(default=("base",), min_length=1)
     fill_rules: tuple[FillRule, ...] = Field(
-        default=(FillRule.NEXT_OPEN_AFTER_ELIGIBILITY, FillRule.OPEN_OF_CURRENT_BAR), min_length=1
+        default=(FillRule.OPEN_OF_CURRENT_BAR, FillRule.NEXT_OPEN_AFTER_ELIGIBILITY),
+        min_length=1,
     )
-    """Every sensitivity run brackets the fill assumption by default: the conservative
-    rule and the textbook rule differ by exactly one bar's move on each signal fill, and
-    a strategy whose edge lives inside that bar should be seen, not silently zeroed."""
+    """Every sensitivity run brackets the fill assumption. The textbook rule leads --
+    it is the closer estimate of a real fill and the headline number -- and the
+    conservative rule follows as the other side of the bracket. They differ by exactly
+    one bar's move on each signal fill; if that gap is most of the return, the edge lives
+    inside the bar after the signal and bar data cannot settle it."""
 
     seed: int = 0
     evaluate_validation: bool = True

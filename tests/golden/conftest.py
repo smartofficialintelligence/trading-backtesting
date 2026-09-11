@@ -118,13 +118,20 @@ class Scripted:
 
 
 def free_config(**overrides: object) -> SimulationConfig:
-    """No costs, no latency, no cap, no expiry: the cleanest possible timing scenario."""
+    """No costs, no latency, no cap, no expiry: the cleanest possible timing scenario.
+
+    Pins the conservative fill rule explicitly. Most golden scenarios were written to
+    pin open(N+2) semantics by hand, and they should keep testing that rule by name
+    rather than tracking whichever rule happens to be the default -- the default is
+    itself asserted in ``test_simulation_fill_bracket.py``.
+    """
     execution = ExecutionConfig(
         submission_latency=dt.timedelta(0),
         order_latency=dt.timedelta(0),
         expire_after=None,
         participation_cap=None,
         liquidity_lookback_bars=1,
+        fill_rule=FillRule.NEXT_OPEN_AFTER_ELIGIBILITY,
         costs=CostConfig.free(),
     )
     base: dict[str, object] = {

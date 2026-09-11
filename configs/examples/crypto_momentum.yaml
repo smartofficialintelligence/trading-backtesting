@@ -50,6 +50,7 @@ plan:
   warmup: PT10M
 
 cost_scenarios: [base, free, stressed]
-# Both fill rules run by default; the pair brackets the execution assumption.
-fill_rules: [next_open_after_eligibility, open_of_current_bar]
+# Both fill rules run; the textbook rule leads (it is the headline) and the conservative
+# open(N+2) rule follows. The pair brackets the execution assumption.
+fill_rules: [open_of_current_bar, next_open_after_eligibility]
 seed: 0

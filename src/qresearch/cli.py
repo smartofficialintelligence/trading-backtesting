@@ -452,18 +452,29 @@ def backtest_run(
 
 
 @runs_app.command("list")
-def runs_list(runs: RunsOption = Path("runs")) -> None:
-    """List completed runs, one per line: id, label, strategy, scenario, then test metrics."""
+def runs_list(
+    runs: RunsOption = Path("runs"),
+    config_id: Annotated[
+        str | None,
+        typer.Option(
+            "--config-id", help="Only runs of this configuration (across code revisions)."
+        ),
+    ] = None,
+) -> None:
+    """List completed runs, one per line: id, config, strategy, scenario, then test metrics."""
     table = run_table(LocalArtifactStore(runs))
+    if config_id is not None:
+        table = table.filter(pl.col("config_id") == config_id)
     if table.is_empty():
-        typer.echo(f"no runs under {runs}")
+        typer.echo(f"no runs under {runs}" + (f" for config {config_id}" if config_id else ""))
         return
     for row in table.sort("started_at").iter_rows(named=True):
         typer.echo(
-            f"{row['run_id']}  {row['label'] or '-':<24} {row['strategy']:<20} "
-            f"{row['cost_scenario']:<9} folds={row['fold_count']} warnings={row['warning_count']}  "
-            f"test: sharpe {_fmt(row['test_sharpe'], '.2f')}  return "
-            f"{_fmt(row['test_total_return'], '+.3%')}  "
+            f"{row['run_id']}  {row['config_id']}  {row['label'] or '-':<20} "
+            f"{row['strategy']:<18} {row['cost_scenario']:<9} {row['fill_rule']:<27} "
+            f"folds={row['fold_count']} warnings={row['warning_count']}  "
+            f"test: sharpe {_fmt(row['test_sharpe'], '.2f')}  "
+            f"return {_fmt(row['test_total_return'], '+.3%')}  "
             f"maxdd {_fmt(row['test_max_drawdown'], '.2%')}"
         )
 
@@ -480,6 +491,7 @@ def runs_show(
         raise typer.Exit(code=2)
     spec, result = store.load_spec(run_id), store.load_result(run_id)
     typer.echo(f"run              {run_id}   status {result.status.value}")
+    typer.echo(f"config           {spec.config_id}   (stable across code revisions)")
     typer.echo(f"label            {spec.label or '-'}   experiment {spec.experiment_id or '-'}")
     typer.echo(f"dataset          {spec.dataset_id}  {spec.bar_size} {spec.calendar_id}")
     typer.echo(f"instruments      {', '.join(spec.instrument_ids)}")

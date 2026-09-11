@@ -76,13 +76,30 @@ class RunSpec(FrozenModel):
     label: str | None = None
 
     def identity(self) -> dict[str, Any]:
+        """Everything that makes this an exact run, code revision included."""
         data = self.canonical_dict()
         data.pop("label", None)
         return data
 
+    def config_identity(self) -> dict[str, Any]:
+        """Everything that makes this the same *experiment configuration*.
+
+        Drops the code revision as well as the label, so editing a docstring -- or any
+        other change that does not alter the configuration -- leaves runs groupable.
+        """
+        data = self.identity()
+        data.pop("code_revision", None)
+        return data
+
     @property
     def run_id(self) -> RunId:
+        """Exact provenance: this configuration, produced by this code."""
         return RunId(f"run_{content_hash(self.identity())}")
+
+    @property
+    def config_id(self) -> str:
+        """Stable across code revisions: groups every run of one configuration."""
+        return f"cfg_{content_hash(self.config_identity())}"
 
 
 class FoldMetrics(FrozenModel):

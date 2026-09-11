@@ -70,7 +70,19 @@ class SyntheticSpec:
     delayed_minutes: tuple[int, ...] = (30, 150)
     """Minute offsets published late (see :attr:`delay`), for the first asset only."""
 
-    delay: _dt.timedelta = _dt.timedelta(minutes=7)
+    delay: _dt.timedelta = _dt.timedelta(seconds=90)
+    """Publication delay for a "late" bar.
+
+    Ninety seconds is the smallest value that exceeds one bar interval, which is what
+    makes availability run *backwards*: bar N+1 publishes before the late bar N, so a
+    point-in-time read returns a hole in the middle of the series rather than a truncated
+    tail. That inversion is the case worth testing, and nothing shorter produces it.
+
+    It is deliberately not minutes. Historical REST ingestion usually has a *constant*
+    publication latency, and real lateness, when it happens, is seconds; a fixture baking
+    in a long delay would invite pessimistic defaults elsewhere. This is a plausible bad
+    hiccup, not a norm. Tests needing a larger hole pass an explicit ``delay`` and say
+    why."""
     duplicate_minutes: tuple[int, ...] = (10,)
     """Minute offsets emitted twice, the second copy at a higher revision."""
 

@@ -14,6 +14,7 @@ from qresearch.simulation.execution import (
     BarOpenExecutionModel,
     CostConfig,
     ExecutionConfig,
+    FillRule,
     LiveOrder,
     OpenEvent,
     SlippageConfig,
@@ -34,6 +35,7 @@ def costly_config() -> object:
             expire_after=None,
             participation_cap=None,
             liquidity_lookback_bars=1,
+            fill_rule=FillRule.NEXT_OPEN_AFTER_ELIGIBILITY,
             costs=COSTLY,
         )
     )

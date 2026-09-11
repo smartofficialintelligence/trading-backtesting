@@ -52,19 +52,19 @@ def test_no_row_is_ever_returned_before_it_was_available(
 def test_a_late_published_bar_is_invisible_until_it_publishes(
     ingested: IngestedFixture,
 ) -> None:
-    """Minute 30 is published 7 minutes late; minutes 31+ arrive on time.
+    """Minute 30 is published 90 seconds late; minutes 31+ arrive on time.
 
     The correct behaviour is a *hole*: the series jumps 00:29 -> 00:31 and only later
     fills in. A loader that instead returned the newest N bars, or that treated the gap as
     end-of-data, would quietly hand the strategy a bar it could not have seen.
     """
-    before = scan(ingested, as_of=at(33), instrument_ids=(BTC,))
+    before = scan(ingested, as_of=at(32, 10), instrument_ids=(BTC,))
     starts = set(before.get_column("bar_start").to_list())
-    assert at(30) not in starts, "a bar published at 00:38 was visible at 00:33"
+    assert at(30) not in starts, "a bar published at 00:32:30 was visible at 00:32:10"
     assert at(31) in starts, "an on-time later bar should still be visible"
     assert at(29) in starts
 
-    after = scan(ingested, as_of=at(39), instrument_ids=(BTC,))
+    after = scan(ingested, as_of=at(32, 40), instrument_ids=(BTC,))
     assert at(30) in set(after.get_column("bar_start").to_list())
 
 
@@ -75,7 +75,7 @@ def test_assets_are_asynchronous_at_the_same_instant(ingested: IngestedFixture) 
     one asset's delayed bar as though it arrived with the rest. The loader must expose the
     asymmetry rather than paper over it.
     """
-    frame = scan(ingested, as_of=at(33))
+    frame = scan(ingested, as_of=at(32, 10))
     counts = dict(frame.group_by("instrument_id").len().rows())
     assert counts[BTC] != counts[ETH]
 
@@ -84,10 +84,10 @@ def test_availability_and_window_filters_are_independent_axes(
     ingested: IngestedFixture,
 ) -> None:
     """A bar inside the requested window can still be invisible for not being published."""
-    frame = scan(ingested, as_of=at(33), start=at(28), end=at(33), instrument_ids=(BTC,))
+    frame = scan(ingested, as_of=at(32, 10), start=at(28), end=at(32, 10), instrument_ids=(BTC,))
     starts = set(frame.get_column("bar_start").to_list())
-    # 00:30 is inside the window but published late (00:38). 00:32 is inside the window
-    # too, but its interval only closes at 00:33 and it publishes at 00:33:02.
+    # 00:30 is inside the window but published late (00:32:30). 00:32 is inside the
+    # window too, but its interval only closes at 00:33 and it publishes at 00:33:02.
     assert starts == {at(28), at(29), at(31)}
 
 
@@ -116,7 +116,9 @@ def test_column_projection_preserves_point_in_time_filtering(
     ingested: IngestedFixture,
 ) -> None:
     """Projecting away available_at must not drop the filter that uses it."""
-    projected = scan(ingested, as_of=at(33), instrument_ids=(BTC,), columns=("bar_start", "close"))
+    projected = scan(
+        ingested, as_of=at(32, 10), instrument_ids=(BTC,), columns=("bar_start", "close")
+    )
     assert projected.columns == ["bar_start", "close"]
     assert at(30) not in set(projected.get_column("bar_start").to_list())
 
@@ -140,7 +142,7 @@ def test_the_unfiltered_scan_sees_what_the_point_in_time_scan_hides(
         UnfilteredScan(dataset_id=ingested.dataset_id, reason="verifying the escape hatch")
     ).collect()
     assert everything.height == ingested.outcome.manifest.row_count
-    assert everything.height > scan(ingested, as_of=at(33)).height
+    assert everything.height > scan(ingested, as_of=at(32, 10)).height
 
 
 def test_the_unfiltered_scan_demands_a_stated_reason(ingested: IngestedFixture) -> None:

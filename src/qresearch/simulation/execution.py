@@ -32,16 +32,29 @@ from qresearch.simulation.events import Fill, Order
 
 
 class FillRule(StrEnum):
+    OPEN_OF_CURRENT_BAR = "open_of_current_bar"
+    """Fill at the open of the bar *containing* ``eligible_at`` -- the conventional
+    "next bar open" assumption, and the default.
+
+    Optimistic: the open print of bar N+1 lands at ``bar_end(N)``, a few seconds before
+    the order could exist, so any edge inside those seconds is captured for free. It is
+    nonetheless the closer estimate of a real fill, which lands a few seconds into bar
+    N+1 rather than a full bar later, and its bias has a known direction and size. Every
+    run using it records an ``optimistic_fill_rule`` warning.
+
+    (The convention comes from daily-frequency research, where "fill at the next open"
+    is unambiguously sound because hours separate the close from the open. At intraday
+    frequency the same phrase makes a weaker claim -- hence the warning, and hence
+    :attr:`NEXT_OPEN_AFTER_ELIGIBILITY` as the other side of the bracket.)"""
+
     NEXT_OPEN_AFTER_ELIGIBILITY = "next_open_after_eligibility"
     """Fill at the first bar open at or after ``eligible_at``, processed in a later clock
     step than the decision. With contiguous bars this is open(N+2) for a signal on bar N:
-    bar N publishes no earlier than bar N+1's open, which has already printed."""
+    bar N publishes no earlier than bar N+1's open, which has already printed.
 
-    OPEN_OF_CURRENT_BAR = "open_of_current_bar"
-    """Fill at the open of the bar *containing* ``eligible_at`` -- the conventional
-    "next bar open" assumption. Optimistic: it uses a print from before the order
-    existed. Available because it is the literature's default and 5-minute research
-    needs it; every run using it carries a warning."""
+    Conservative: it can never use a print from before the order existed, but it misses a
+    full bar of the move, which erases a genuine one-bar edge entirely. Run it alongside
+    the default; the pair brackets the truth."""
 
 
 class SlippageKind(StrEnum):
@@ -94,7 +107,7 @@ class ExecutionConfig(FrozenModel):
     order_latency: _dt.timedelta = Field(default=_dt.timedelta(seconds=1), ge=_dt.timedelta(0))
     """``order_at`` to ``eligible_at``: gateway to venue."""
 
-    fill_rule: FillRule = FillRule.NEXT_OPEN_AFTER_ELIGIBILITY
+    fill_rule: FillRule = FillRule.OPEN_OF_CURRENT_BAR
     expire_after: _dt.timedelta | None = _dt.timedelta(minutes=5)
     """Unfilled orders expire this long after ``order_at``. None: never."""
 

@@ -89,6 +89,7 @@ def test_every_fill_satisfies_the_timestamp_chain_with_positive_latencies() -> N
         execution=ExecutionConfig(
             submission_latency=dt.timedelta(milliseconds=500),
             order_latency=dt.timedelta(seconds=1),
+            fill_rule=FillRule.NEXT_OPEN_AFTER_ELIGIBILITY,
             expire_after=None,
             participation_cap=None,
             liquidity_lookback_bars=1,
@@ -118,6 +119,7 @@ def test_a_long_order_latency_pushes_the_fill_to_a_later_open() -> None:
     config = free_config(
         execution=ExecutionConfig(
             order_latency=dt.timedelta(seconds=59),
+            fill_rule=FillRule.NEXT_OPEN_AFTER_ELIGIBILITY,
             expire_after=None,
             participation_cap=None,
             liquidity_lookback_bars=1,

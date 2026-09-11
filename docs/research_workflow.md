@@ -46,11 +46,10 @@ labelled. `runs compare ... --role validation` for tuning, `--role test` once.
 qresearch backtest run -c configs/examples/crypto_momentum.yaml --root data --runs runs
 ```
 
-One run per cost scenario × fill rule. Read `base / next_open_after_eligibility` first,
-then check `stressed` still has the sign you expect, then look at how much the
-`open_of_current_bar` twin adds: that gap is one bar's move per fill, and if it is most of
-the return, the edge lives inside the bar after the signal. Read the warnings block
-before the Sharpe.
+One run per cost scenario × fill rule. Read `base / open_of_current_bar` first — that is
+the headline — then check `stressed` still has the sign you expect, then see how much the
+conservative `next_open_after_eligibility` twin gives back: that gap is one bar's move per
+fill. Read the warnings block before the Sharpe.
 
 ## 6. Compare and record
 

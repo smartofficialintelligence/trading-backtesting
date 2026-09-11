@@ -42,6 +42,7 @@ METRIC_COLUMNS: tuple[str, ...] = (
 
 _RUN_SCHEMA: dict[str, pl.DataType] = {
     "run_id": pl.String(),
+    "config_id": pl.String(),
     "status": pl.String(),
     "experiment_id": pl.String(),
     "label": pl.String(),
@@ -88,6 +89,7 @@ def run_table(
         spec, result = store.load_spec(run_id), store.load_result(run_id)
         row: dict[str, Any] = {
             "run_id": str(run_id),
+            "config_id": spec.config_id,
             "status": result.status.value,
             "experiment_id": spec.experiment_id,
             "label": spec.label,
@@ -178,6 +180,7 @@ def build_run_index(
 
 COMPARE_COLUMNS: tuple[str, ...] = (
     "run_id",
+    "config_id",
     "label",
     "status",
     "dataset_id",

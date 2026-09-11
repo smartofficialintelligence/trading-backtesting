@@ -91,7 +91,7 @@ session features (`MinutesSinceOpen`, `MinutesToClose`, `SessionFraction`,
 wrong feature. Bars outside any session carry nulls; that count is the natural input for
 the "session errors" validation check (wired in Stage 5 hardening if not sooner).
 
-## D14. Default fill rule: first open at or after eligibility, in a later step — **autonomous**
+## D14. Default fill rule: first open at or after eligibility, in a later step — **autonomous** — *superseded by D35*
 
 With contiguous bars, bar N publishes no earlier than `bar_end(N) == bar_start(N+1)`, so
 bar N+1's open has already printed when a decision on bar N is made. The engine's phase
@@ -230,3 +230,44 @@ the decisions diverge from the first fill, so the runs cannot share a simulation
 conservative rule remains the default for single-rule runs and for the first line of any
 report. The gap between the twins is pinned by a golden test to
 `quantity × (open(N+2) − open(N+1))` per signal fill.
+
+## D35. The textbook rule is the default and the headline — reviewed with the user
+
+Supersedes D14's choice of default (the mechanics it describes are unchanged, and it
+remains available as `NEXT_OPEN_AFTER_ELIGIBILITY`).
+
+The user's initial argument was that an academically accepted convention must have a
+reason behind it. It does, but the reason does not transfer: the convention comes from
+**daily**-frequency research, where hours separate the close from the next open and
+"fill at the next open" is unambiguously sound. At intraday frequency the same phrase
+makes a weaker claim — the open of bar N+1 prints at `bar_end(N)`, before the bar has
+even been received.
+
+The conclusion stands on better grounds. A real fill lands a few seconds into bar N+1;
+`open(N+1)` is seconds early, `open(N+2)` is nearly a full bar late. Neither is unbiased
+(optimistic overstates fast alpha, conservative erases it), but optimistic is nearer the
+truth and its bias has a known direction. Condition attached and kept: the
+`optimistic_fill_rule` warning fires on every run using it, and the conservative twin
+still runs by default, so the headline number always arrives with its bracket.
+
+## D36. Fixture lateness is 90 s, not 7 minutes — reviewed with the user
+
+The user's principle: do not bake pessimistic assumptions into backtesting, because they
+cause more harm than they prevent. The old 7-minute delay in `SyntheticSpec` was invented
+to make a code path observable and risked normalising a pessimistic figure.
+
+90 s is the smallest value that exceeds one bar interval, which is what makes availability
+run *backwards* (bar N+1 publishes before the late bar N) — the case actually worth
+testing; 20 s exercises nothing new. It is also a plausible feed hiccup rather than a
+norm. Note that for historical REST ingestion `available_at` is usually a *constant*
+offset, under which availability ordering equals interval ordering and D21 is nearly a
+no-op; variable lateness matters only with live-recorded or revision-stamped data.
+
+## D37. Two identifiers: `run_id` and `config_id` — reviewed with the user
+
+The user asked why not both, and they were right. `run_id` hashes the resolved spec
+*including* `code_revision` (exact provenance, drives reuse and reproduction);
+`config_id` hashes it *excluding* `code_revision` and the label, so every run of one
+configuration groups together across code edits. A docstring typo no longer scatters a
+session's results. Both are stored, indexed, and shown; `runs list --config-id` filters.
+Reuse semantics are unchanged, so reproducibility does not weaken.

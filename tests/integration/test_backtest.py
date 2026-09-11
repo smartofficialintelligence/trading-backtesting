@@ -139,8 +139,9 @@ def test_validation_and_test_metrics_are_separate_and_labelled(
     for fold in result.folds:
         assert fold.metrics.annualization.label.startswith("24x7")
     view = compare(store, [result.run_id], role="test")
-    assert view.columns[:9] == [
+    assert view.columns[:10] == [
         "run_id",
+        "config_id",
         "label",
         "status",
         "dataset_id",
@@ -149,7 +150,7 @@ def test_validation_and_test_metrics_are_separate_and_labelled(
         "fill_rule",
         "fold_count",
         "warning_count",
-    ]
+    ], "assumptions lead; performance follows"
     assert view.item(0, "role") == "test" and view.item(0, "dataset_id") == ingested.dataset_id
 
 
@@ -346,7 +347,11 @@ def test_the_default_brackets_the_fill_assumption() -> None:
         strategy=StrategyRef(kind="buy_and_hold"),
         plan=WalkForwardPlan(train=H, test=H, purge=M),
     )
-    assert cfg.fill_rules == (FillRule.NEXT_OPEN_AFTER_ELIGIBILITY, FillRule.OPEN_OF_CURRENT_BAR)
+    assert cfg.fill_rules == (FillRule.OPEN_OF_CURRENT_BAR, FillRule.NEXT_OPEN_AFTER_ELIGIBILITY)
+    assert cfg.fill_rules[0] is FillRule.OPEN_OF_CURRENT_BAR, "the headline rule leads"
+    assert ExecutionConfig().fill_rule is FillRule.OPEN_OF_CURRENT_BAR, (
+        "the default is the textbook rule"
+    )
 
 
 def test_fill_rules_are_separate_runs_and_the_optimistic_one_fills_earlier(

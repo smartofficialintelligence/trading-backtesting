@@ -45,7 +45,7 @@ def test_the_asof_macro_applies_the_availability_filter(
     conn: duckdb.DuckDBPyConnection, ingested: IngestedFixture
 ) -> None:
     """SQL users get the point-in-time predicate without hand-writing it."""
-    as_of = T0 + dt.timedelta(minutes=33)
+    as_of = T0 + dt.timedelta(minutes=32, seconds=10)
     frame = query_asof(conn, ingested.dataset_id, as_of, where="instrument_id = 'CRYPTO:BTCUSD'")
     starts = set(frame.get_column("bar_start").to_list())
     assert T0 + dt.timedelta(minutes=30) not in starts
@@ -108,7 +108,7 @@ def test_fetchall_and_parameter_binding_work_on_timestamptz(
     assert row[0].tzinfo is not None
     assert row[0] == T0
 
-    as_of = T0 + dt.timedelta(minutes=33)
+    as_of = T0 + dt.timedelta(minutes=32, seconds=10)
     bound = conn.execute(f"SELECT count(*) FROM bars_asof_{suffix}(?)", [as_of]).fetchone()
     assert bound is not None
     assert bound[0] == query_asof(conn, ingested.dataset_id, as_of).height

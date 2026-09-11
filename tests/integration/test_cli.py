@@ -133,7 +133,16 @@ def test_crypto_workflow_from_demo_to_reproduce(tmp_path: Path) -> None:
     base, free = _run_id_from(ran.output), _run_id_from(ran.output, "free")
 
     listed = runner.invoke(app, ["runs", "list", "--runs", runs])
-    assert listed.exit_code == 0 and base in listed.output
+    assert listed.exit_code == 0, listed.output
+    assert base in listed.output
+
+    shown_cfg = runner.invoke(app, ["runs", "show", base, "--runs", runs])
+    config_id = next(
+        ln for ln in shown_cfg.output.splitlines() if ln.startswith("config ")
+    ).split()[1]
+    filtered = runner.invoke(app, ["runs", "list", "--runs", runs, "--config-id", config_id])
+    assert filtered.exit_code == 0 and base in filtered.output
+    assert config_id.startswith("cfg_")
 
     shown = runner.invoke(app, ["runs", "show", base, "--runs", runs])
     assert (
