@@ -1,0 +1,52 @@
+# US-equity mean reversion on the synthetic XNYS sample (session-aware features).
+#
+#   qresearch data demo --root data --market equity
+#   qresearch backtest run -c configs/examples/equities_mean_reversion.yaml --root data --runs runs
+#
+# The strategy goes long when the 1-bar return is *negative* (threshold on -ret_1 is not
+# available, so this example uses a 5-bar lagged return with a below-zero threshold via
+# descending weight: it is a demonstration of the plumbing, not a signal).
+
+dataset_id: REPLACE_WITH_DATASET_ID
+label: equity mean reversion smoke
+experiment_id: equity-mr
+
+features:
+  - kind: lagged_return
+    params: { lag: 5 }
+  - kind: minutes_since_open
+  - kind: session_fraction
+  - kind: is_early_close
+
+transforms:
+  - kind: winsorize
+    columns: [ret_5]
+    params: { lower: 0.02, upper: 0.98 }
+
+strategy:
+  kind: lagged_signal
+  params: { feature: ret_5, weight: 0.3, threshold: 0.0 }
+
+simulation:
+  initial_cash: 250000
+  execution:
+    order_latency: PT2S
+    expire_after: PT10M
+    participation_cap: 0.05
+    liquidity_lookback_bars: 20
+  constraints:
+    allow_short: false
+    max_gross_exposure: 0.8
+    max_position_weight: 0.5
+  end_of_run: liquidate
+
+plan:
+  kind: expanding
+  train: PT3H
+  test: PT1H
+  purge: PT5M
+  label_horizon: PT5M
+  warmup: PT30M
+
+cost_scenarios: [base, low, stressed]
+seed: 0

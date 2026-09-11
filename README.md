@@ -4,49 +4,53 @@ Research and backtesting platform for systematic intraday strategies. Optimised 
 trustworthy, reproducible out-of-sample experiments on 1-minute and 5-minute bars —
 crypto and liquid US equities first.
 
-Design: [ARCHITECTURE.md](ARCHITECTURE.md). Roadmap: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md).
-Timestamp rules: [docs/timestamp_semantics.md](docs/timestamp_semantics.md).
+- Design: [ARCHITECTURE.md](ARCHITECTURE.md) · Roadmap and status: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
+- Timestamps: [docs/timestamp_semantics.md](docs/timestamp_semantics.md) · Data: [docs/data_contracts.md](docs/data_contracts.md)
+- Execution: [docs/execution_assumptions.md](docs/execution_assumptions.md) · Workflow: [docs/research_workflow.md](docs/research_workflow.md)
+- Before believing a result: [docs/leakage_checklist.md](docs/leakage_checklist.md)
+- Judgment calls made during implementation: [docs/decisions.md](docs/decisions.md)
 
 ## Status
 
-Stage 1 (data foundation) of the development plan. What exists:
+The MVP defined in the development plan (Stages 0–5) is implemented. Not live trading.
 
-- strict UTC timestamp policy and canonical hashing
-- `Instrument`, `Bar`, `DatasetManifest` contracts with timing and OHLC invariants
-- local CSV/Parquet adapter with an explicit, required source timestamp-label convention
-- immutable, content-addressed Parquet datasets with integrity verification
-- point-in-time reads where the availability cutoff is a required argument
-- 1m → 5m resampling that cannot publish a coarse bar before its window closes
-- cross-row validation (duplicates, gaps, OHLC, availability ordering)
-- rebuildable DuckDB views with a point-in-time table macro
-- a synthetic two-asset fixture containing gaps, late bars, and a revised duplicate
-
-No strategies, features, or simulator yet — those are Stages 2–3.
+| layer | what exists |
+|---|---|
+| data | immutable content-addressed Parquet datasets; required bar-label convention; point-in-time reads with a mandatory `as_of`; validation with a calendar-aware session check; 1m→5m resampling; DuckDB views |
+| calendars | `24x7:1` and `XNYS:1` (holidays, observance, early closes, DST) |
+| features | causal expressions with derived availability; gap-aware windows; cross-sectional ranks with batch availability; session features; fold-owned fitted transforms; leakage checkers in the package |
+| simulation | phase-ordered bar-open engine; distinct signal/order/eligible/fill timestamps; decomposed spread/slippage/fee; participation caps; reconciled accounting; order-independent constraints |
+| research | walk-forward folds with stated purge and embargo; labelled annualisation; per-fold and stitched per-role metrics; cost-scenario sensitivity |
+| artifacts | run id = hash of the resolved spec; atomic publish; identical rerun reuses; divergent rerun kept aside; environment capture; rebuildable DuckDB run index; `runs reproduce` |
 
 ## Quickstart
 
 ```sh
 uv sync --extra dev
-uv run qresearch data demo --root data          # generate + ingest the synthetic sample
-uv run qresearch data list --root data
+
+uv run qresearch data demo --root data                     # synthetic 2-asset crypto sample
 uv run qresearch data inspect <dataset-id> --root data
 uv run qresearch data head <dataset-id> --root data --as-of 2024-03-04T00:33:00Z
-uv run qresearch data sql  <dataset-id> --root data --as-of 2024-03-04T00:33:00Z \
-    --where "instrument_id = 'CRYPTO:BTCUSD'"
-uv run qresearch data verify <dataset-id> --root data
+
+# put the dataset id into the example config, then:
+uv run qresearch backtest run -c configs/examples/crypto_momentum.yaml --root data --runs runs
+uv run qresearch runs list --runs runs
+uv run qresearch runs compare <run-a> <run-b> --runs runs --role test
+uv run qresearch runs reproduce <run-id> --root data --runs runs
 ```
 
-`--as-of` is required on every read command: there is no way to ask for data without
-stating when you are allowed to know it. Try `00:33:00Z` on the demo dataset — the BTC
-bar for `00:30` is published seven minutes late and will be absent while `00:31` is
-present.
+`--market equity` on `data demo` produces an XNYS-session sample for
+`configs/examples/equities_mean_reversion.yaml`.
 
-Declarative ingestion: `qresearch data ingest -c configs/examples/ingest_synthetic_crypto.yaml`.
+Two things to internalise before reading any number: under the default fill rule a signal
+on bar N fills at **open(N+2)** (bar N publishes no earlier than bar N+1's open, which has
+already printed); and every read requires `--as-of`. Both are explained in the docs above.
 
 ## Development
 
 ```sh
 uv run ruff format . && uv run ruff check . && uv run mypy && uv run pytest
+uv run python scripts/benchmark.py --instruments 5 --days 5     # baseline timings
 ```
 
 `pytest` runs with `filterwarnings = error`; a deprecation is a failure.
@@ -55,18 +59,19 @@ uv run ruff format . && uv run ruff check . && uv run mypy && uv run pytest
 
 ```
 src/qresearch/
-  time.py, ids.py, config.py      UTC policy, canonical hashing, strict model bases
-  data/
-    contracts.py                  Instrument, Bar, SymbolAlias
-    manifests.py                  policies, validation report, DatasetIdentity/Manifest
-    catalog.py                    Parquet layout, write, point-in-time scan, verify
-    point_in_time.py              BarQuery (as_of required), UnfilteredScan (reason required)
-    validation.py                 cross-row checks
-    duck.py                       DuckDB views + as-of macro
-    synthetic.py                  deterministic fixture generator
-    adapters/                     base helpers + local CSV/Parquet adapter
-  application/
-    ingest.py                     adapter -> validate -> store; resample_bars
-    config.py                     YAML -> IngestConfig
+  time.py, ids.py, config.py            UTC policy, canonical hashing, strict model bases
+  data/                                 contracts, manifests, catalog, validation, calendars,
+                                        synthetic fixtures, DuckDB views, adapters/
+  features/                             contracts, pipeline, technical, session, cross_sectional,
+                                        transforms, leakage checkers, registry
+  simulation/                           clock, engine, execution, portfolio, constraints, events
+  strategy/                             DecisionContext + Strategy protocol, examples, registry
+  research/                             splits, walk_forward, metrics, experiments (index/compare)
+  artifacts/                            RunSpec/RunResult, environment capture, local store
+  application/                          ingest, run_backtest (orchestration), config loaders
   cli.py
+tests/                                  unit/, contracts/, integration/, golden/ (hand-calculated)
+configs/examples/                       ingest and backtest YAML examples
+docs/                                   semantics, contracts, assumptions, workflow, checklist, decisions
+scripts/benchmark.py
 ```

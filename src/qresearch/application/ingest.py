@@ -16,6 +16,7 @@ from dataclasses import dataclass
 import polars as pl
 
 from qresearch.data.adapters.base import BarAdapter, IngestRequest
+from qresearch.data.calendars import get_calendar
 from qresearch.data.catalog import DatasetCatalog
 from qresearch.data.contracts import AssetClass
 from qresearch.data.manifests import (
@@ -89,7 +90,12 @@ def ingest_bars(
             )
         )
 
-    report = validate_bars(frame, policy=request.policy, expect_complete_grid=expect_complete_grid)
+    report = validate_bars(
+        frame,
+        policy=request.policy,
+        expect_complete_grid=expect_complete_grid,
+        calendar=get_calendar(calendar_id),
+    )
     if batch.dropped_unmapped_symbols:
         report = report.model_copy(
             update={

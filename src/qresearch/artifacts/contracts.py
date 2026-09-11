@@ -68,6 +68,7 @@ class RunSpec(FrozenModel):
     span: TimeRange
     cost_scenario: str = "base"
     seed: int = 0
+    evaluate_validation: bool = True
     code_revision: str | None = None
     """``<git sha>`` or ``<git sha>-dirty-<diff hash>``; None outside a repository."""
 

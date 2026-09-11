@@ -131,3 +131,20 @@ def test_validation_is_deterministic(expect_grid: bool) -> None:
     a = validate_bars(frame, policy=policy(), expect_complete_grid=expect_grid)
     b = validate_bars(frame, policy=policy(), expect_complete_grid=expect_grid)
     assert [f.model_dump() for f in a.findings] == [f.model_dump() for f in b.findings]
+
+
+def test_bars_outside_sessions_are_flagged_when_a_calendar_is_given() -> None:
+    from tests.unit.test_calendars import equity_bars, utc
+
+    from qresearch.data.calendars import AlwaysOpenCalendar, XNYSCalendar
+
+    # 13:00 .. 20:29 UTC on 2024-03-11: 30 pre-market + 30 post-market bars.
+    bars = equity_bars(450, start=utc(2024, 3, 11, 13, 0))
+    report = validate_bars(bars, policy=policy(), calendar=XNYSCalendar())
+    outside = next(f for f in report.findings if f.check == "outside_session")
+    assert outside.severity is ValidationSeverity.WARNING and outside.occurrences == 60
+    assert "outside_session" not in {f.check for f in validate_bars(bars, policy=policy()).findings}
+    assert "outside_session" not in {
+        f.check
+        for f in validate_bars(bars, policy=policy(), calendar=AlwaysOpenCalendar()).findings
+    }

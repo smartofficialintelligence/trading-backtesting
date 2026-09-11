@@ -1,5 +1,13 @@
 # Development Plan
 
+> **Status (2026-09-11):** Stages 0–5 are implemented and the MVP acceptance criteria in
+> each stage are covered by tests (see the `tests/` tree; golden scenarios are
+> hand-calculated). Deviations from the text below, and every judgment call made without a
+> check-in, are recorded in [docs/decisions.md](docs/decisions.md). Notable deviations:
+> the default fill rule is one bar more conservative than "next open" (D14); the partition
+> layout carries a `dataset=` level (D2); manifests store `Instrument` definitions (D28).
+> Items deferred in §10 remain deferred except the tool choice (D1) and calendars (D12).
+
 ## 1. Delivery approach
 
 Build the smallest end-to-end research loop first, then deepen realism and scale. Each stage must leave the repository runnable, tested, and documented. Later stages should not weaken earlier timing or reproducibility invariants.

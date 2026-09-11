@@ -157,7 +157,7 @@ Every normalized dataset version has a `DatasetManifest` containing:
 - adjustment, missing-bar, duplicate, revision, and timestamp-label policies;
 - validation results and creation timestamp.
 
-Provider corrections create a new dataset version. Existing experiments remain attached to the older manifest.
+Provider corrections create a new dataset version. Existing experiments remain attached to the older manifest. The manifest also carries the full `Instrument` definitions for its ids (increments, calendar, aliases); they are outside the identity hash because an alias correction is not a data change, and they are what the simulator reads for quantity increments and the trading calendar.
 
 ## 5. Time and event semantics
 
@@ -181,7 +181,7 @@ When data have identical timestamps, ordering is fixed by event phase and stable
 
 ### Bar-based execution limitations
 
-OHLCV bars do not reveal the path within a bar, queue position, displayed liquidity, or whether a limit and stop were touched in which order. The MVP therefore supports conservative market-order fills at the first eligible subsequent bar open. It does not claim realistic limit-order simulation.
+OHLCV bars do not reveal the path within a bar, queue position, displayed liquidity, or whether a limit and stop were touched in which order. The MVP therefore supports conservative market-order fills at the first eligible subsequent bar open. It does not claim realistic limit-order simulation. Note that with contiguous bars a completed bar is published no earlier than the next bar's open, which has therefore already printed when a decision is made; the first open an order can reach is the one after that (open(N+2) for a signal on bar N). The conventional next-open assumption is available as a labelled optimistic fill rule that records a warning on every run using it.
 
 The modeled fill price is conceptually:
 
@@ -237,7 +237,7 @@ A rule plus point-in-time inputs, and the resulting membership/effective interva
 
 #### `FeatureSpec`
 
-Name, version, input columns/features, parameters, lookback requirement, null/warm-up policy, declared output type, and implementation fingerprint. Feature outputs include `as_of`/`available_at` semantics and lineage.
+Name, version, input columns/features, parameters, lookback requirement, null/warm-up policy, declared output type, and implementation fingerprint. Feature outputs include `as_of`/`available_at` semantics and lineage. A feature is one Polars expression plus its spec; the pipeline derives availability (window maximum of input `available_at` plus declared latency), nulls windows that span a gap in the bar grid unless the spec opts out, and gives each output row one `available_at` equal to the latest across the feature set. Cross-sectional features are a second stage whose row availability is lifted to the slowest member of the cross-section.
 
 #### `FittedTransform`
 

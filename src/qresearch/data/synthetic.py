@@ -23,6 +23,7 @@ from decimal import Decimal
 from pathlib import Path
 from random import Random
 
+from qresearch.data.calendars import get_calendar
 from qresearch.data.contracts import AssetClass, Instrument, SymbolAlias
 from qresearch.ids import InstrumentId
 from qresearch.time import UTC
@@ -47,6 +48,11 @@ DEFAULT_ASSETS: tuple[SyntheticAsset, ...] = (
     SyntheticAsset("ETH-USD", "CRYPTO:ETHUSD", 2_300.0, 0.0011, 180.0),
 )
 
+EQUITY_ASSETS: tuple[SyntheticAsset, ...] = (
+    SyntheticAsset("ACME", "EQ:ACME", 150.0, 0.0004, 20_000.0),
+    SyntheticAsset("GLBX", "EQ:GLBX", 48.0, 0.0006, 55_000.0),
+)
+
 
 @dataclass(frozen=True, slots=True)
 class SyntheticSpec:
@@ -69,20 +75,42 @@ class SyntheticSpec:
     """Minute offsets emitted twice, the second copy at a higher revision."""
 
     normal_latency: _dt.timedelta = _dt.timedelta(seconds=2)
+    calendar_id: str = "24x7:1"
+    """Bars are generated only inside this calendar's sessions."""
+
+    asset_class: AssetClass = AssetClass.CRYPTO
+    venue: str = "SYNTH"
+
+    @classmethod
+    def equity(cls) -> SyntheticSpec:
+        """Two US equities over two XNYS sessions (2024-03-04 and -05, EST)."""
+        return cls(
+            start=_dt.datetime(2024, 3, 4, 14, 0, tzinfo=UTC),
+            minutes=2 * 24 * 60,
+            assets=EQUITY_ASSETS,
+            seed=20240305,
+            gap_minutes=(90, 91),
+            delayed_minutes=(45, 400),
+            duplicate_minutes=(12,),
+            calendar_id="XNYS:1",
+            asset_class=AssetClass.EQUITY,
+            venue="XNYS",
+        )
 
 
 def instruments_for(spec: SyntheticSpec) -> tuple[Instrument, ...]:
     """Instrument definitions matching a spec's assets."""
+    crypto = spec.asset_class is AssetClass.CRYPTO
     return tuple(
         Instrument(
             instrument_id=InstrumentId(asset.instrument_id),
-            asset_class=AssetClass.CRYPTO,
-            venue="SYNTH",
+            asset_class=spec.asset_class,
+            venue=spec.venue,
             quote_currency="USD",
-            base_currency=asset.symbol.split("-")[0],
+            base_currency=asset.symbol.split("-")[0] if crypto else None,
             price_increment=Decimal("0.01"),
-            quantity_increment=Decimal("0.00000001"),
-            calendar_id="24x7:1",
+            quantity_increment=Decimal("0.00000001") if crypto else Decimal("1"),
+            calendar_id=spec.calendar_id,
             aliases=(
                 SymbolAlias(
                     symbol=asset.symbol,
@@ -113,12 +141,15 @@ class _Row:
 def generate_rows(spec: SyntheticSpec) -> list[_Row]:
     """Generate source rows, timestamped by ``bar_start``."""
     rows: list[_Row] = []
+    calendar = get_calendar(spec.calendar_id)
     for index, asset in enumerate(spec.assets):
         rng = Random(spec.seed + index * 1_000)
         price = asset.start_price
         for minute in range(spec.minutes):
             bar_start = spec.start + _dt.timedelta(minutes=minute)
             bar_end = bar_start + _dt.timedelta(minutes=1)
+            if calendar.session_at(bar_start) is None:
+                continue  # venue closed: no bar exists
 
             drift = rng.gauss(0.0, asset.volatility)
             open_price = price

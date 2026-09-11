@@ -25,6 +25,7 @@ from typing import Final
 
 import polars as pl
 
+from qresearch.data.calendars import TradingCalendar, attach_sessions
 from qresearch.data.manifests import (
     MissingBarPolicy,
     NormalizationPolicy,
@@ -70,6 +71,7 @@ def validate_bars(
     *,
     policy: NormalizationPolicy,
     expect_complete_grid: bool = False,
+    calendar: TradingCalendar | None = None,
 ) -> ValidationReport:
     """Run every cross-row check against a normalized bar frame.
 
@@ -79,8 +81,11 @@ def validate_bars(
             gaps are an error or a warning, and what publication latency was promised.
         expect_complete_grid: when True, report a missing interval for every gap in the
             regular bar grid between an instrument's first and last observed bar. Correct
-            for 24/7 crypto; for equities it produces a finding per overnight break until
-            session calendars land, so it defaults off.
+            for 24/7 crypto; for equities it produces a finding per overnight break, so
+            it defaults off.
+        calendar: when given, bars whose ``bar_start`` falls outside every session are
+            reported (``outside_session``). Extended-hours prints in an equity dataset
+            are a common way to get a "fill" at a time the venue was closed.
     """
     findings: list[ValidationFinding] = []
     if frame.is_empty():
@@ -101,6 +106,8 @@ def validate_bars(
     findings.extend(_check_availability(frame, policy=policy))
     if expect_complete_grid:
         findings.extend(_check_grid(frame, policy=policy))
+    if calendar is not None:
+        findings.extend(_check_sessions(frame, calendar))
     findings.append(
         ValidationFinding(
             check="row_count",
@@ -280,6 +287,21 @@ def _check_availability(
             )
         )
     return findings
+
+
+def _check_sessions(frame: pl.DataFrame, calendar: TradingCalendar) -> list[ValidationFinding]:
+    outside = attach_sessions(frame, calendar).filter(pl.col("session_open").is_null())
+    if outside.is_empty():
+        return []
+    return [
+        _finding(
+            "outside_session",
+            ValidationSeverity.WARNING,
+            f"bars fall outside every {calendar.calendar_id} session (pre/post-market, "
+            "weekend, or holiday); the simulator will treat their opens as tradeable",
+            outside,
+        )
+    ]
 
 
 def _check_grid(frame: pl.DataFrame, *, policy: NormalizationPolicy) -> list[ValidationFinding]:

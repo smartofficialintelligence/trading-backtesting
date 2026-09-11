@@ -193,3 +193,31 @@ The simulator needs quantity increments and the calendar; the catalog previously
 only ids. Definitions are stored on the manifest but excluded from `dataset_id` since an
 alias correction is not a data change. Manifests written before this field default to
 empty and are refused by the orchestrator with a re-ingest message.
+
+## D29. `runs reproduce` re-executes from the stored spec; exit 3 on divergence — **autonomous**
+
+Reproduction is defined over the economic digest (sorted fills and equity curve), not
+bytes. A divergence exits non-zero so CI or a promotion script can gate on it.
+
+## D30. `features build` writes a Parquet table plus a JSON sidecar — **autonomous**
+
+The sidecar records the dataset id, each feature's spec and fingerprint, and the row
+count. Every row keeps `available_at`; the file is for inspection and ML table export,
+not a cache the run reads (on-demand computation stays the primary path per plan §Stage 2).
+
+## D31. Synthetic equity sample is session-only, 2024-03-04/05 (EST) — **autonomous**
+
+`SyntheticSpec.equity()` generates bars only inside XNYS sessions so the equity example
+runs through session features and XNYS annualisation end to end. Dates precede the 2024
+DST change deliberately; the DST paths are covered by calendar unit tests.
+
+## D32. `outside_session` is a warning, not an error — **autonomous**
+
+Extended-hours prints in an equity dataset are common and sometimes intended. The finding
+is prominent (the simulator would trade at those opens) but ingestion is not refused.
+Wired into `ingest_bars` via the dataset's calendar; the 24x7 calendar never flags.
+
+## D33. Benchmarks are a script with a JSON record, not a test — **autonomous**
+
+Plan §9 says not to encode an arbitrary throughput promise. `scripts/benchmark.py` records
+wall-clock and peak RSS for a synthetic workload so later optimisation has a baseline.

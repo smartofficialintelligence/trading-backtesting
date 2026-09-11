@@ -124,6 +124,7 @@ def resolve_spec(
         or TimeRange(start=manifest.identity.range_start, end=manifest.identity.range_end),
         cost_scenario=cost_scenario,
         seed=config.seed,
+        evaluate_validation=config.evaluate_validation,
         code_revision=code_revision,
         experiment_id=config.experiment_id,
         label=config.label,
@@ -151,7 +152,7 @@ def run_backtest(
     handle = store.begin(spec, environment)
     try:
         result, frames, fitted = execute(
-            spec, config, catalog=catalog, manifest=manifest, started_at=handle.started_at
+            spec, catalog=catalog, manifest=manifest, started_at=handle.started_at
         )
     except Exception as error:
         store.fail(handle, error)
@@ -178,7 +179,6 @@ def run_sensitivity(
 
 def execute(
     spec: RunSpec,
-    config: BacktestConfig,
     *,
     catalog: DatasetCatalog,
     manifest: DatasetManifest,
@@ -222,7 +222,7 @@ def execute(
         )
 
         roles: list[tuple[SplitRole, TimeRange]] = []
-        if fold.validation is not None and config.evaluate_validation:
+        if fold.validation is not None and spec.evaluate_validation:
             roles.append((SplitRole.VALIDATION, fold.validation))
         roles.append((SplitRole.TEST, fold.test))
         for role, decision_range in roles:

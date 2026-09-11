@@ -6,7 +6,7 @@
 # Every field here is part of the dataset's identity except `expect_complete_grid`.
 # Change a policy value and you get a different dataset_id -- by design.
 
-source_uri: data/source/synthetic_1m.csv
+source_uri: data/source/synthetic_crypto_1m.csv
 source_name: "synthetic:bars-v1"
 bar_size: 1m
 asset_class: crypto
