@@ -1,0 +1,12 @@
+.form{display:grid;gap:14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row label{color:var(--muted);min-width:132px;font-size:12px}
+.row input,.row select{min-width:120px}
+.chip{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--bg);
+border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:6px}
+.chip .kind{font-weight:600}
+.chip .rm{margin-left:auto}
+.err{color:var(--bad);font-size:12px}
+.ok{color:var(--good);font-size:12px}
+fieldset{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:0}
+legend{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:0 6px}

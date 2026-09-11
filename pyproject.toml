@@ -48,6 +48,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/qresearch"]
+# The UI's JS/CSS live beside the package and must ship with it.
+artifacts = ["src/qresearch/ui/static/*"]
 
 [tool.ruff]
 line-length = 100

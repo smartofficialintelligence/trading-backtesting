@@ -170,9 +170,19 @@ def test_the_ui_never_writes_to_the_run_store_itself(client: TestClient, populat
     assert {r: store.load_result(r).economic_digest for r in before} == digests
 
 
-def test_mutating_routes_are_confined_to_job_control(client: TestClient, populated) -> None:
-    """Every non-GET route must be job control. A route that writes results directly
-    would bypass the CLI and void the reproducibility guarantee in D46."""
+def test_every_mutating_route_goes_through_the_cli(client: TestClient, populated) -> None:
+    """Each non-GET route must either queue work for the CLI subprocess or control a job.
+
+    Asserted by equality so a new mutating route fails this test until someone writes down
+    why it is safe. The guarantee it protects (D46): the run store is written only by the
+    subprocess, so anything the UI produces is reproducible by hand.
+
+    * ``POST /api/preview`` — a pure computation that writes nothing; a POST only because
+      it takes a config body, which is awkward on a GET.
+    * ``POST /api/backtests`` — validates a config and queues ``qresearch backtest run``.
+      It creates a *job*, never a run.
+    * ``DELETE /api/jobs/{job_id}`` — stops unfinished work. Destroys nothing.
+    """
     store, _ = populated
     app = create_app(store.root, "data")
     mutating = {
@@ -181,10 +191,28 @@ def test_mutating_routes_are_confined_to_job_control(client: TestClient, populat
         for method in getattr(route, "methods", set())
         if method not in {"GET", "HEAD", "OPTIONS"}
     }
-    assert mutating == {("DELETE", "/api/jobs/{job_id}")}, (
-        f"unexpected mutating routes: {mutating}. A new one must either go through the "
-        "CLI subprocess or be justified here."
-    )
+    assert mutating == {
+        ("POST", "/api/preview"),
+        ("POST", "/api/backtests"),
+        ("DELETE", "/api/jobs/{job_id}"),
+    }, f"unexpected mutating routes: {mutating}. Route it through the CLI or justify it here."
+
+
+def test_launching_creates_a_job_not_a_run(client: TestClient, populated) -> None:
+    """The launch route must not write to the run store itself."""
+    from qresearch.ui.launch import DEFAULT_CONFIG
+
+    store, _ = populated
+    before = set(store.list_runs())
+    datasets = client.get("/api/datasets").json()
+    if not datasets:
+        pytest.skip("no dataset in this fixture's catalog")
+    config = {**DEFAULT_CONFIG, "dataset_id": datasets[0]["dataset_id"]}
+    response = client.post("/api/backtests", json={"config": config})
+    assert response.status_code == 202
+    assert set(store.list_runs()) == before, "the route wrote a run directly"
+    command = response.json()["command"]
+    assert "qresearch.cli" in " ".join(command) and "backtest" in command
 
 
 def test_cancelling_an_unknown_job_is_a_404(client: TestClient, populated) -> None:

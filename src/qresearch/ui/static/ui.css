@@ -1,0 +1,20 @@
+nav{display:flex;gap:18px;align-items:baseline;border-bottom:1px solid var(--line);
+padding:10px 20px;background:var(--card);position:sticky;top:0;z-index:5}
+nav a{color:var(--muted);text-decoration:none;font-size:12px;text-transform:uppercase;
+letter-spacing:.06em}
+nav a.on,nav a:hover{color:var(--fg)}
+nav .brand{font-weight:700;letter-spacing:-.01em;text-transform:none;font-size:14px;color:var(--fg)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+input[type=search],select{background:var(--card);color:var(--fg);border:1px solid var(--line);
+border-radius:6px;padding:5px 8px;font:12px ui-monospace,monospace}
+button{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:6px 12px;
+font-size:12px;cursor:pointer}
+button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+button:disabled{opacity:.45;cursor:not-allowed}
+tbody tr{cursor:pointer}
+tbody tr.sel{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+a.run{color:var(--accent);text-decoration:none;font-family:ui-monospace,monospace}
+.pill{display:inline-block;padding:1px 7px;border-radius:999px;border:1px solid var(--line);
+font-size:11px;color:var(--muted)}
+.pill.warn{color:var(--warn-fg);border-color:var(--warn-line);background:var(--warn-bg)}
+.count{color:var(--muted);font-size:12px}

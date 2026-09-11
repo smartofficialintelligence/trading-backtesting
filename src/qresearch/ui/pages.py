@@ -17,30 +17,6 @@ import polars as pl
 from qresearch.artifacts.charts import Series, line_chart
 from qresearch.artifacts.styles import BASE_CSS
 
-_UI_CSS = """
-nav{display:flex;gap:18px;align-items:baseline;border-bottom:1px solid var(--line);
-padding:10px 20px;background:var(--card);position:sticky;top:0;z-index:5}
-nav a{color:var(--muted);text-decoration:none;font-size:12px;text-transform:uppercase;
-letter-spacing:.06em}
-nav a.on,nav a:hover{color:var(--fg)}
-nav .brand{font-weight:700;letter-spacing:-.01em;text-transform:none;font-size:14px;color:var(--fg)}
-.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
-input[type=search],select{background:var(--card);color:var(--fg);border:1px solid var(--line);
-border-radius:6px;padding:5px 8px;font:12px ui-monospace,monospace}
-button{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:6px 12px;
-font-size:12px;cursor:pointer}
-button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
-button:disabled{opacity:.45;cursor:not-allowed}
-tbody tr{cursor:pointer}
-tbody tr.sel{background:color-mix(in srgb,var(--accent) 12%,transparent)}
-a.run{color:var(--accent);text-decoration:none;font-family:ui-monospace,monospace}
-.pill{display:inline-block;padding:1px 7px;border-radius:999px;border:1px solid var(--line);
-font-size:11px;color:var(--muted)}
-.pill.warn{color:var(--warn-fg);border-color:var(--warn-line);background:var(--warn-bg)}
-.count{color:var(--muted);font-size:12px}
-"""
-
-
 _HAY_COLUMNS = ("run_id", "config_id", "label", "strategy", "cost_scenario", "fill_rule")
 """Columns concatenated into each row's search haystack for client-side filtering."""
 
@@ -71,7 +47,7 @@ def _signed(value: float | None, spec: str = "+.2%") -> str:
 
 def shell(title: str, body: str, *, active: str = "") -> str:
     """The app frame: nav, shared styles, page body."""
-    links = [("runs", "/"), ("jobs", "/jobs"), ("compare", "/compare")]
+    links = [("runs", "/"), ("new", "/new"), ("jobs", "/jobs"), ("compare", "/compare")]
     nav = "".join(
         f'<a href="{href}" class="{"on" if name == active else ""}">{name}</a>'
         for name, href in links
@@ -79,7 +55,10 @@ def shell(title: str, body: str, *, active: str = "") -> str:
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f"<title>{_e(title)}</title><style>{BASE_CSS}{_UI_CSS}</style></head><body>"
+        f"<title>{_e(title)}</title><style>{BASE_CSS}</style>"
+        '<link rel="stylesheet" href="/static/ui.css">'
+        '<link rel="stylesheet" href="/static/launch.css">'
+        "</head><body>"
         f'<nav><span class="brand">qresearch</span>{nav}</nav>'
         f'<div class="wrap">{body}</div></body></html>'
     )
@@ -135,38 +114,9 @@ def runs_page(table: pl.DataFrame) -> str:
         "<th>scenario</th><th>fill rule</th><th>folds</th><th>warn</th><th>test return</th>"
         "<th>sharpe</th><th>max dd</th><th>costs</th></tr></thead>"
         f'<tbody id="rows">{"".join(rows)}</tbody></table></div>'
-        f"<script>{_RUNS_JS}</script>"
+        '<script src="/static/runs.js"></script>'
     )
     return shell("runs", body, active="runs")
-
-
-_RUNS_JS = """
-const q=document.getElementById('q'),sc=document.getElementById('scenario'),
-st=document.getElementById('strategy'),cmp=document.getElementById('cmp'),
-clear=document.getElementById('clear'),shown=document.getElementById('shown');
-const rows=[...document.querySelectorAll('#rows tr')];
-function apply(){
-  const t=q.value.toLowerCase(), s=sc.value, g=st.value; let n=0;
-  for(const r of rows){
-    const hay=r.dataset.hay.toLowerCase();
-    const ok=(!t||hay.includes(t))&&(!s||hay.includes(s))&&(!g||hay.includes(g));
-    r.style.display=ok?'':'none'; if(ok)n++;
-  }
-  shown.textContent=n+' shown';
-}
-function picked(){return [...document.querySelectorAll('.pick:checked')].map(c=>c.value);}
-function sync(){cmp.disabled=picked().length<2;
-  for(const r of rows) r.classList.toggle('sel', r.querySelector('.pick').checked);}
-q.oninput=apply; sc.onchange=apply; st.onchange=apply;
-document.getElementById('rows').addEventListener('change',sync);
-document.getElementById('rows').addEventListener('click',e=>{
-  if(e.target.tagName==='A'||e.target.classList.contains('pick'))return;
-  const box=e.target.closest('tr').querySelector('.pick'); box.checked=!box.checked; sync();});
-cmp.onclick=()=>location='/compare?runs='+picked().join(',');
-clear.onclick=()=>{q.value='';sc.value='';st.value='';
-  document.querySelectorAll('.pick').forEach(c=>c.checked=false);apply();sync();};
-apply(); sync();
-"""
 
 
 def compare_page(table: pl.DataFrame, curves: dict[str, pl.DataFrame], role: str) -> str:
@@ -257,6 +207,7 @@ __all__ = [
     "compare_page",
     "job_log_page",
     "jobs_page",
+    "launch_page",
     "not_found",
     "runs_page",
     "shell",
@@ -311,17 +262,9 @@ def jobs_page(jobs: Sequence[Any]) -> str:
         + '<div class="card"><table><thead><tr><th>kind</th><th>state</th><th>label</th>'
         "<th>progress</th><th>runs</th><th>took</th><th>latest</th><th></th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table></div>"
-        f"<script>{_JOBS_JS}</script>"
+        '<script src="/static/jobs.js"></script>'
     )
     return shell("jobs", body, active="jobs")
-
-
-_JOBS_JS = """
-document.querySelectorAll('.cancel').forEach(b=>b.onclick=async e=>{
-  e.preventDefault(); b.disabled=true;
-  await fetch('/api/jobs/'+b.dataset.job,{method:'DELETE'}); location.reload();});
-if(document.querySelector('.cancel')) setTimeout(()=>location.reload(), 2000);
-"""
 
 
 def job_log_page(job: Any, lines: Sequence[dict[str, Any]], output: str) -> str:
@@ -354,3 +297,49 @@ def job_log_page(job: Any, lines: Sequence[dict[str, Any]], output: str) -> str:
         '<div class="toolbar"><a href="/jobs"><button class="ghost">back to jobs</button></a></div>'
     )
     return shell("job", body, active="jobs")
+
+
+def launch_page(default_config: dict[str, Any]) -> str:
+    """The backtest launcher.
+
+    Controls are generated at load time from ``/api/components``, so a feature added in
+    code appears here with no change to this file.
+    """
+    import json as _json
+
+    body = (
+        "<h1>New backtest</h1>"
+        '<p class="sub">Builds a config, writes it to a job, and runs the same '
+        "<code>qresearch backtest run</code> you would type.</p>"
+        '<div class="form">'
+        "<fieldset><legend>data</legend>"
+        '<div class="row"><label for="dataset">dataset</label>'
+        '<select id="dataset"></select><span class="count" id="dsinfo"></span></div>'
+        '<div class="row"><label for="instruments">instruments</label>'
+        '<select id="instruments" multiple size="4"></select>'
+        '<span class="count">blank = all</span></div></fieldset>'
+        '<fieldset><legend>features</legend><div id="features"></div>'
+        '<button class="ghost" id="addfeature">+ feature</button></fieldset>'
+        '<fieldset><legend>transforms</legend><div id="transforms"></div>'
+        '<button class="ghost" id="addtransform">+ transform</button></fieldset>'
+        '<fieldset><legend>strategy</legend><div id="strategy"></div></fieldset>'
+        "<fieldset><legend>simulation</legend>"
+        '<div class="row"><label for="cash">initial cash</label>'
+        '<input id="cash" type="number" step="1000" value="100000"></div>'
+        '<div class="row"><label>cost scenarios</label><span id="scenarios"></span></div>'
+        '<div class="row"><label>fill rules</label><span id="fillrules"></span></div></fieldset>'
+        '<fieldset><legend>walk-forward plan</legend><div id="plan"></div></fieldset>'
+        "<fieldset><legend>label</legend>"
+        '<div class="row"><label for="label">label</label><input id="label" size="32">'
+        '<label for="experiment">experiment</label>'
+        '<input id="experiment" size="20"></div></fieldset>'
+        '<div class="toolbar"><button id="preview" class="ghost">Preview folds</button>'
+        '<button id="launch">Launch</button><span id="status" class="count"></span></div>'
+        '<div id="previewout"></div>'
+        '<details><summary class="count">config</summary>'
+        '<div class="card"><pre class="mono" id="yaml"></pre></div></details>'
+        "</div>"
+        f"<script>const DEFAULTS={_json.dumps(default_config, default=str)};</script>"
+        '<script src="/static/launch.js"></script>'
+    )
+    return shell("new backtest", body, active="new")

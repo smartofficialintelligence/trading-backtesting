@@ -21,17 +21,36 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
+from qresearch.artifacts.charts import fold_ribbon
 from qresearch.artifacts.local import LocalArtifactStore
 from qresearch.artifacts.report import build_report_for_run
-from qresearch.jobs import JobRunner, JobStore
+from qresearch.data.catalog import DatasetCatalog
+from qresearch.introspect import component_catalog
+from qresearch.jobs import JobKind, JobRunner, JobStore
+from qresearch.jobs.runner import cli_command
 from qresearch.jobs.store import JobNotFoundError
 from qresearch.logging import get_logger
 from qresearch.research.experiments import fold_table, run_table
-from qresearch.ui.pages import compare_page, job_log_page, jobs_page, not_found, runs_page
+from qresearch.ui.launch import (
+    DEFAULT_CONFIG,
+    LaunchError,
+    config_to_yaml,
+    dataset_summaries,
+    estimate,
+    preview_plan,
+)
+from qresearch.ui.pages import (
+    compare_page,
+    job_log_page,
+    jobs_page,
+    launch_page,
+    not_found,
+    runs_page,
+)
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -51,6 +70,7 @@ def create_app(runs_root: Path | str = "runs", data_root: Path | str = "data") -
     try:
         from fastapi import FastAPI
         from fastapi.responses import HTMLResponse, JSONResponse, Response
+        from fastapi.staticfiles import StaticFiles
     except ModuleNotFoundError as error:  # pragma: no cover - exercised by the extra
         raise UIUnavailableError(_MISSING) from error
 
@@ -79,6 +99,9 @@ def create_app(runs_root: Path | str = "runs", data_root: Path | str = "data") -
     app.state.jobs = jobs
     app.state.runner = runner
     app.state.data_root = Path(data_root)
+    catalog = DatasetCatalog(data_root)
+    static = Path(__file__).parent / "static"
+    app.mount("/static", StaticFiles(directory=static), name="static")
 
     def _table(run_ids: list[str] | None = None) -> pl.DataFrame:
         return run_table(store, run_ids)
@@ -180,6 +203,77 @@ def create_app(runs_root: Path | str = "runs", data_root: Path | str = "data") -
         except JobNotFoundError:
             return JSONResponse({"error": "unknown job"}, status_code=404)
         return JSONResponse({"job_id": job_id, "cancelled": cancelled})
+
+    @app.get("/new", response_class=HTMLResponse)
+    def new_backtest() -> HTMLResponse:
+        return HTMLResponse(launch_page(DEFAULT_CONFIG))
+
+    @app.get("/api/components")
+    def api_components() -> JSONResponse:
+        """Registered features, transforms and strategies with their parameters.
+
+        The form is generated from this, so a component added in code appears in the UI
+        without the UI knowing anything about it.
+        """
+        return JSONResponse(json.loads(component_catalog().model_dump_json()))
+
+    @app.get("/api/datasets")
+    def api_datasets() -> JSONResponse:
+        return JSONResponse([json.loads(d.model_dump_json()) for d in dataset_summaries(catalog)])
+
+    @app.post("/api/preview")
+    def api_preview(body: dict[str, Any]) -> JSONResponse:
+        """Expand a plan into folds without running anything."""
+        config = body.get("config") or {}
+        try:
+            yaml_text = config_to_yaml(config)
+            shape = estimate(config, catalog)
+        except LaunchError as error:
+            return JSONResponse({"error": str(error), "errors": error.errors}, status_code=422)
+        except (KeyError, LookupError) as error:
+            return JSONResponse({"error": str(error), "errors": []}, status_code=422)
+
+        result = preview_plan(config, catalog)
+        if result.error:
+            return JSONResponse({"error": result.error, "errors": []}, status_code=422)
+        ribbon = fold_ribbon([(f.fold, f.role, f.start, f.end) for f in result.folds])
+        return JSONResponse({"html": ribbon, "estimate": shape, "yaml": yaml_text})
+
+    @app.post("/api/backtests")
+    def api_launch(body: dict[str, Any]) -> JSONResponse:
+        """Validate a config, write it, and queue the CLI command that runs it.
+
+        The only route that creates work. It creates a *job*, not a run: the run store is
+        still written solely by the subprocess, so anything produced here is reproducible
+        by hand from the config this writes.
+        """
+        config = body.get("config") or {}
+        try:
+            yaml_text = config_to_yaml(config)
+        except LaunchError as error:
+            return JSONResponse({"error": str(error), "errors": error.errors}, status_code=422)
+
+        record = runner.submit(
+            kind=JobKind.BACKTEST,
+            config_text=yaml_text,
+            label=body.get("label") or config.get("label"),
+            command=lambda path: cli_command(
+                "--verbose",
+                "--json-logs",
+                "backtest",
+                "run",
+                "-c",
+                str(path),
+                "--root",
+                str(app.state.data_root),
+                "--runs",
+                str(store.root),
+            ),
+        )
+        return JSONResponse(
+            {"job_id": record.job_id, "command": list(record.command), "config_yaml": yaml_text},
+            status_code=202,
+        )
 
     @app.get("/api/health")
     def health() -> JSONResponse:

@@ -463,3 +463,49 @@ justified). Cancelling destroys nothing; it stops work that has not finished.
 * FastAPI's `@app.on_event("shutdown")` is deprecated. That was *our* deprecation, not a
   third party's, so it was fixed by moving to the lifespan API rather than adding an
   exemption. The one standing exemption (starlette's anyio alias) remains the only one.
+
+## D51. Forms are generated from the registries, not hand-written — reviewed with the user
+
+`qresearch/introspect.py` reads each registered implementation's dataclass fields — types,
+`Literal` choices, defaults, required-ness — and the launcher renders controls from that.
+**Adding a feature in code makes it appear in the UI with no UI change**, which is the same
+property that stops the YAML path and the browser path from drifting.
+
+A parameter whose annotation is not recognised is reported as `unsupported` rather than
+guessed at, so it surfaces as a gap instead of silently rendering the wrong control. A test
+asserts no registered parameter is currently unsupported.
+
+## D52. Launch validates by *constructing* the components — **autonomous**
+
+Pydantic checks shape, not vocabulary: `{"kind": "nope"}` is a perfectly valid
+`StrategyRef`, and the registry lookup would not fail until the run was minutes underway.
+`_parse` now builds every feature, transform, and strategy before anything is queued, so an
+unknown kind, an unknown parameter, or an out-of-range value (`lag: 0`) becomes a
+field-level error at submit time.
+
+Discovered by testing the failure path rather than the happy one — the happy path passed
+from the first attempt.
+
+## D53. `DEFAULT_CONFIG` holds ISO-8601 strings, not timedeltas — **autonomous**
+
+The defaults are serialised straight into form fields and posted back, so they must already
+be in the wire format the parser accepts. A `timedelta` renders as `"6:00:00"`, which does
+not parse as a duration — the prefilled form would have been broken on first load.
+
+## D54. The mutating-route test now lists three routes, each justified — reviewed with the user
+
+It fired twice while building Stage 7 (once for `POST /api/backtests`, once for
+`POST /api/preview`) and had to be updated deliberately each time, which is exactly the
+intent: a new mutating route cannot appear without someone writing down why it is safe.
+
+Current set: `POST /api/preview` (pure computation, POST only because the body is
+complex), `POST /api/backtests` (queues the CLI; creates a job, never a run), and
+`DELETE /api/jobs/{id}` (stops unfinished work). A companion test asserts launching does
+not change the set of runs.
+
+## D55. UI assets are static files, not Python string literals — **autonomous**
+
+Keeping JS and CSS inside `.py` strings meant fighting the line-length limit with code that
+gets no syntax highlighting and no linting. They now live in `qresearch/ui/static/` and are
+served by the app; `pyproject.toml` ships them in the wheel. The archival report stays
+fully self-contained and keeps its inline styles — different artifact, different rule.

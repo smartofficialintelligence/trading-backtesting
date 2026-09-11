@@ -23,6 +23,7 @@ The MVP defined in the development plan (Stages 0–5) is implemented. Not live 
 | simulation | phase-ordered bar-open engine; distinct signal/order/eligible/fill timestamps; decomposed spread/slippage/fee; participation caps; reconciled accounting; order-independent constraints |
 | research | walk-forward folds with stated purge and embargo; labelled annualisation; per-fold and stitched per-role metrics; cost-scenario sensitivity |
 | jobs | background CLI subprocesses with progress parsed from `--json-logs`, bounded queue, cancellation, crash reaping; `qresearch jobs submit/list/show/cancel` |
+| launcher | build a backtest in the browser: dataset/feature/strategy pickers generated from the registries, fold-layout preview before running, config shown as YAML; submits the same CLI command |
 | ui | local app (`qresearch ui`, `--extra ui`): filterable run list, overlaid equity curves with assumptions above performance, per-run report, JSON ledger API |
 | reporting | per-run self-contained `report.html` (inline SVG, no server/CDN): assumptions and warnings above the metrics, equity/drawdown/exposure, cost attribution, trade P&L distribution, fold ribbon, stability table |
 | artifacts | run id = hash of the resolved spec; atomic publish; identical rerun reuses; divergent rerun kept aside; environment capture; rebuildable DuckDB run index; `runs reproduce` |
