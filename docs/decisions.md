@@ -90,3 +90,53 @@ session features (`MinutesSinceOpen`, `MinutesToClose`, `SessionFraction`,
 `IsEarlyClose`) read them. Forgetting the step is a clear pipeline error rather than a
 wrong feature. Bars outside any session carry nulls; that count is the natural input for
 the "session errors" validation check (wired in Stage 5 hardening if not sooner).
+
+## D14. Default fill rule: first open at or after eligibility, in a later step — **autonomous**
+
+With contiguous bars, bar N publishes no earlier than `bar_end(N) == bar_start(N+1)`, so
+bar N+1's open has already printed when a decision on bar N is made. The engine's phase
+order (fills before decisions within an instant) therefore makes **open(N+2)** the
+earliest fill for a signal on bar N, under any non-negative latency. This is one bar more
+conservative than the conventional "next open" assumption. That convention is available
+as `FillRule.OPEN_OF_CURRENT_BAR` — fill at eligibility time at the open of the bar
+containing it — because 5-minute research needs it, and every run using it carries an
+`optimistic_fill_rule` warning. Golden tests pin both.
+
+## D15. A fill before an instrument's first publication is marked at its own print — **autonomous**
+
+Only possible in the first bar. The open print the execution model traded on is known at
+that instant; using it as a provisional mark keeps accounting valid until a close
+arrives. It is not exposed to the strategy as a "close".
+
+## D16. Liquidation runs at the first instant at or after the range end — **autonomous**
+
+`EndOfRunPolicy.LIQUIDATE` cancels pending orders and submits flattening orders there,
+then keeps processing opens until they fill or expire. If that instant is also an open
+event, in-range orders that can fill do so *before* liquidation (phase order). If no
+instant exists past the end, positions stay open and `liquidation_impossible` is
+recorded. Default is `MARK`: leave positions open at the last point-in-time close.
+
+## D17. Cross-instrument constraints scale by one common factor — **autonomous**
+
+Gross-exposure and cash limits scale every exposure-increasing order proportionally
+rather than rejecting in sequence, so the outcome is independent of intent order.
+Intents are also sorted canonically before sizing, so permuted intents give identical
+ledgers including order ids (tested).
+
+## D18. No liquidity estimate: no participation cap, with a warning — **autonomous**
+
+Before `liquidity_lookback_bars` have published, an order has no trailing-volume
+estimate. Rejecting would make the first bars of every run untradeable; capping against
+nothing is impossible. The order fills uncapped and `no_liquidity_estimate` is recorded.
+Slippage models needing an estimate fall back to `fallback_bps` with `slippage_fallback`.
+
+## D19. Expiry at the same instant as an open expires first — **autonomous**
+
+Conservative tie-break. Likewise a stale-mark check runs at decisions, not during gaps
+where nothing is valued; a single instrument's gap therefore produces no warning, a
+multi-instrument gap does (tested).
+
+## D20. Shorts carry no borrow cost or availability constraint — **autonomous**
+
+Plan sec. 10 deferred borrow modelling. `allow_short=False` is the default; when
+enabled, a `short_position` warning is recorded on every run that opens one.
