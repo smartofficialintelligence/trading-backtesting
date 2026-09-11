@@ -60,10 +60,12 @@ data_app = typer.Typer(no_args_is_help=True, help="Ingest, inspect, and verify d
 features_app = typer.Typer(no_args_is_help=True, help="Materialise feature sets.")
 backtest_app = typer.Typer(no_args_is_help=True, help="Run walk-forward backtests.")
 runs_app = typer.Typer(no_args_is_help=True, help="Inspect, compare, and reproduce runs.")
+jobs_app = typer.Typer(no_args_is_help=True, help="Submit and inspect background jobs.")
 app.add_typer(data_app, name="data")
 app.add_typer(features_app, name="features")
 app.add_typer(backtest_app, name="backtest")
 app.add_typer(runs_app, name="runs")
+app.add_typer(jobs_app, name="jobs")
 
 RootOption = Annotated[
     Path, typer.Option("--root", envvar="QRESEARCH_DATA_ROOT", help="Catalog root directory.")
@@ -90,6 +92,119 @@ def _root(
 ) -> None:
     """qresearch -- intraday strategy research and backtesting."""
     configure(logging.INFO if verbose else logging.WARNING, json_lines=json_logs)
+
+
+@jobs_app.command("submit")
+def jobs_submit(
+    config: Annotated[Path, typer.Option("--config", "-c", help="Backtest config YAML.")],
+    root: RootOption = Path("data"),
+    runs: RunsOption = Path("runs"),
+    label: Annotated[str | None, typer.Option("--label")] = None,
+    wait: Annotated[bool, typer.Option("--wait", help="Block until the job finishes.")] = False,
+) -> None:
+    """Queue a backtest as a background job.
+
+    The job runs the same ``backtest run`` command you would type; ``jobs show`` prints it
+    back so it can always be reproduced by hand.
+    """
+    import time
+
+    from qresearch.jobs import JobKind, JobRunner, JobStore
+    from qresearch.jobs.runner import cli_command
+
+    store = JobStore(runs)
+    runner = JobRunner(store)
+    runner.start()
+    record = runner.submit(
+        kind=JobKind.BACKTEST,
+        config_text=config.read_text(encoding="utf-8"),
+        label=label or config.stem,
+        command=lambda path: cli_command(
+            "--verbose",
+            "--json-logs",
+            "backtest",
+            "run",
+            "-c",
+            str(path),
+            "--root",
+            str(root),
+            "--runs",
+            str(runs),
+        ),
+    )
+    typer.echo(f"queued {record.job_id}")
+    if not wait:
+        typer.echo(f"follow with: qresearch jobs show {record.job_id} --runs {runs}")
+        return
+    while not store.get(record.job_id).state.terminal:
+        time.sleep(0.3)
+    final = store.get(record.job_id)
+    runner.stop()
+    typer.echo(f"{final.state.value}  runs={', '.join(final.run_ids) or '-'}")
+    if final.state.value != "succeeded":
+        typer.secho(final.error or "job failed", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+
+@jobs_app.command("list")
+def jobs_list(runs: RunsOption = Path("runs")) -> None:
+    """List background jobs, newest first."""
+    from qresearch.jobs import JobStore
+
+    records = JobStore(runs).list_jobs(limit=50)
+    if not records:
+        typer.echo(f"no jobs under {runs}")
+        return
+    for record in records:
+        took = f"{record.duration.total_seconds():.1f}s" if record.duration else "-"
+        typer.echo(
+            f"{record.job_id}  {record.state.value:<10} {record.kind.value:<9} "
+            f"{(record.label or '-'):<24} folds={record.folds_complete:<3} {took:>8}  "
+            f"{', '.join(record.run_ids) or '-'}"
+        )
+
+
+@jobs_app.command("show")
+def jobs_show(
+    job_id: Annotated[str, typer.Argument()],
+    runs: RunsOption = Path("runs"),
+) -> None:
+    """Show a job's command, state, and recent output."""
+    from qresearch.jobs import JobStore
+    from qresearch.jobs.store import JobNotFoundError
+
+    store = JobStore(runs)
+    try:
+        record = store.get(job_id)
+    except JobNotFoundError as error:
+        typer.secho(str(error), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from error
+    typer.echo(f"job      {record.job_id}   {record.state.value}")
+    typer.echo(f"kind     {record.kind.value}   label {record.label or '-'}")
+    typer.echo(f"runs     {', '.join(record.run_ids) or '-'}")
+    typer.echo(f"progress {record.folds_complete} folds   {record.message or '-'}")
+    typer.echo(f"command  {' '.join(record.command)}")
+    if record.error:
+        typer.secho(f"error    {record.error}", fg=typer.colors.RED)
+    output = store.output_path(job_id)
+    if output.exists():
+        typer.echo("")
+        typer.echo("\n".join(output.read_text(encoding="utf-8").splitlines()[-20:]))
+
+
+@jobs_app.command("cancel")
+def jobs_cancel(
+    job_id: Annotated[str, typer.Argument()],
+    runs: RunsOption = Path("runs"),
+) -> None:
+    """Cancel a queued or running job."""
+    from qresearch.jobs import JobRunner, JobStore
+
+    store = JobStore(runs)
+    if JobRunner(store).cancel(job_id):
+        typer.echo(f"cancelled {job_id}")
+    else:
+        typer.echo(f"{job_id} already finished")
 
 
 @app.command()

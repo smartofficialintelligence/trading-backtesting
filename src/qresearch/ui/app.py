@@ -17,6 +17,9 @@ the exploratory view over many runs.
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,9 +27,11 @@ import polars as pl
 
 from qresearch.artifacts.local import LocalArtifactStore
 from qresearch.artifacts.report import build_report_for_run
+from qresearch.jobs import JobRunner, JobStore
+from qresearch.jobs.store import JobNotFoundError
 from qresearch.logging import get_logger
 from qresearch.research.experiments import fold_table, run_table
-from qresearch.ui.pages import compare_page, not_found, runs_page
+from qresearch.ui.pages import compare_page, job_log_page, jobs_page, not_found, runs_page
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -50,8 +55,29 @@ def create_app(runs_root: Path | str = "runs", data_root: Path | str = "data") -
         raise UIUnavailableError(_MISSING) from error
 
     store = LocalArtifactStore(runs_root)
-    app = FastAPI(title="qresearch", docs_url="/api/docs", openapi_url="/api/openapi.json")
+    jobs = JobStore(runs_root)
+    runner = JobRunner(jobs)
+    # Started eagerly as well as in the lifespan: a TestClient used without its context
+    # manager never runs lifespan, and start() is idempotent.
+    runner.start()
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        runner.start()
+        try:
+            yield
+        finally:
+            runner.stop(timeout=5.0)
+
+    app = FastAPI(
+        title="qresearch",
+        docs_url="/api/docs",
+        openapi_url="/api/openapi.json",
+        lifespan=lifespan,
+    )
     app.state.store = store
+    app.state.jobs = jobs
+    app.state.runner = runner
     app.state.data_root = Path(data_root)
 
     def _table(run_ids: list[str] | None = None) -> pl.DataFrame:
@@ -111,6 +137,49 @@ def create_app(runs_root: Path | str = "runs", data_root: Path | str = "data") -
         except (FileNotFoundError, OSError):
             return JSONResponse({"error": f"run has no {name} ledger"}, status_code=404)
         return Response(frame.head(limit).write_json(), media_type="application/json")
+
+    @app.get("/jobs", response_class=HTMLResponse)
+    def jobs_index() -> HTMLResponse:
+        return HTMLResponse(jobs_page(jobs.list_jobs(limit=200)))
+
+    @app.get("/jobs/{job_id}", response_class=HTMLResponse)
+    def job_detail(job_id: str) -> HTMLResponse:
+        try:
+            record = jobs.get(job_id)
+        except JobNotFoundError as error:
+            return HTMLResponse(not_found(str(error)), status_code=404)
+        output = jobs.output_path(job_id)
+        return HTMLResponse(
+            job_log_page(
+                record,
+                jobs.log_lines(job_id),
+                output.read_text(encoding="utf-8") if output.exists() else "",
+            )
+        )
+
+    @app.get("/api/jobs")
+    def api_jobs() -> JSONResponse:
+        return JSONResponse([json.loads(r.model_dump_json()) for r in jobs.list_jobs(limit=200)])
+
+    @app.get("/api/jobs/{job_id}")
+    def api_job(job_id: str) -> JSONResponse:
+        try:
+            return JSONResponse(json.loads(jobs.get(job_id).model_dump_json()))
+        except JobNotFoundError:
+            return JSONResponse({"error": "unknown job"}, status_code=404)
+
+    @app.delete("/api/jobs/{job_id}")
+    def api_cancel(job_id: str) -> JSONResponse:
+        """Cancel a queued or running job.
+
+        The only mutating route today, and it destroys nothing: it stops work that has not
+        finished. The run store is still only ever written by the CLI subprocess.
+        """
+        try:
+            cancelled = runner.cancel(job_id)
+        except JobNotFoundError:
+            return JSONResponse({"error": "unknown job"}, status_code=404)
+        return JSONResponse({"job_id": job_id, "cancelled": cancelled})
 
     @app.get("/api/health")
     def health() -> JSONResponse:

@@ -151,13 +151,74 @@ def test_the_ui_reads_the_same_run_table_the_cli_does(client: TestClient, popula
     assert {r["run_id"] for r in api} == set(run_table(store).get_column("run_id").to_list())
 
 
-def test_the_ui_creates_nothing(client: TestClient, populated) -> None:
-    """Today the UI is strictly read-only: no route mutates the store."""
+def test_the_ui_never_writes_to_the_run_store_itself(client: TestClient, populated) -> None:
+    """Replaces the earlier GET/HEAD-only assertion, which stopped holding when job
+    control arrived (see docs/workbench_plan.md Stage 7).
+
+    The guarantee that actually matters is not "no mutation" but **"no mutation of
+    results"**: the run store is written only by the CLI subprocess, so anything the UI
+    produces is reproducible by hand. Browsing must not create, alter, or delete a run.
+    """
     store, ids = populated
     before = set(store.list_runs())
-    for path in ("/", "/compare", f"/runs/{ids[0]}", "/api/runs"):
-        client.get(path)
-    assert set(store.list_runs()) == before
+    digests = {run_id: store.load_result(run_id).economic_digest for run_id in before}
+
+    for path in ("/", "/jobs", "/compare", f"/runs/{ids[0]}", "/api/runs", "/api/jobs"):
+        assert client.get(path).status_code == 200, path
+
+    assert set(store.list_runs()) == before, "browsing changed the set of runs"
+    assert {r: store.load_result(r).economic_digest for r in before} == digests
+
+
+def test_mutating_routes_are_confined_to_job_control(client: TestClient, populated) -> None:
+    """Every non-GET route must be job control. A route that writes results directly
+    would bypass the CLI and void the reproducibility guarantee in D46."""
+    store, _ = populated
     app = create_app(store.root, "data")
-    methods = {m for route in app.routes for m in getattr(route, "methods", set())}
-    assert methods <= {"GET", "HEAD"}, f"read-only app gained {methods - {'GET', 'HEAD'}}"
+    mutating = {
+        (method, route.path)
+        for route in app.routes
+        for method in getattr(route, "methods", set())
+        if method not in {"GET", "HEAD", "OPTIONS"}
+    }
+    assert mutating == {("DELETE", "/api/jobs/{job_id}")}, (
+        f"unexpected mutating routes: {mutating}. A new one must either go through the "
+        "CLI subprocess or be justified here."
+    )
+
+
+def test_cancelling_an_unknown_job_is_a_404(client: TestClient, populated) -> None:
+    assert client.delete("/api/jobs/job_nope").status_code == 404
+
+
+def test_the_jobs_page_renders_when_empty(client: TestClient, populated) -> None:
+    page = client.get("/jobs")
+    assert page.status_code == 200 and "No jobs" in page.text
+    assert client.get("/api/jobs").json() == []
+
+
+def test_a_job_appears_on_the_jobs_page_with_its_command(client: TestClient, populated) -> None:
+    """The job page shows the exact command, because being able to re-run it by hand is
+    the whole point of the subprocess design."""
+    import sys
+
+    from qresearch.jobs import JobKind, JobStore
+    from qresearch.jobs.runner import JobRunner
+
+    store, _ = populated
+    jobs = JobStore(store.root)
+    runner = JobRunner(jobs)
+    record = jobs.create(
+        kind=JobKind.BACKTEST,
+        command=(sys.executable, "-m", "qresearch.cli", "version"),
+        label="visible",
+    )
+    del runner
+
+    page = client.get("/jobs")
+    assert "visible" in page.text and "queued" in page.text
+    detail = client.get(f"/jobs/{record.job_id}")
+    assert detail.status_code == 200
+    assert "qresearch.cli" in detail.text
+    assert "run this yourself" in detail.text
+    assert client.get("/jobs/job_nope").status_code == 404

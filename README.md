@@ -22,7 +22,8 @@ The MVP defined in the development plan (Stages 0–5) is implemented. Not live 
 | features | causal expressions with derived availability; gap-aware windows; cross-sectional ranks with batch availability; session features; fold-owned fitted transforms; leakage checkers in the package |
 | simulation | phase-ordered bar-open engine; distinct signal/order/eligible/fill timestamps; decomposed spread/slippage/fee; participation caps; reconciled accounting; order-independent constraints |
 | research | walk-forward folds with stated purge and embargo; labelled annualisation; per-fold and stitched per-role metrics; cost-scenario sensitivity |
-| ui | local read-only app (`qresearch ui`, `--extra ui`): filterable run list, overlaid equity curves with assumptions above performance, per-run report, JSON ledger API |
+| jobs | background CLI subprocesses with progress parsed from `--json-logs`, bounded queue, cancellation, crash reaping; `qresearch jobs submit/list/show/cancel` |
+| ui | local app (`qresearch ui`, `--extra ui`): filterable run list, overlaid equity curves with assumptions above performance, per-run report, JSON ledger API |
 | reporting | per-run self-contained `report.html` (inline SVG, no server/CDN): assumptions and warnings above the metrics, equity/drawdown/exposure, cost attribution, trade P&L distribution, fold ribbon, stability table |
 | artifacts | run id = hash of the resolved spec; atomic publish; identical rerun reuses; divergent rerun kept aside; environment capture; rebuildable DuckDB run index; `runs reproduce` |
 
@@ -42,6 +43,7 @@ uv run qresearch runs list --runs runs
 uv run qresearch runs compare <run-a> <run-b> --runs runs --role test
 uv run qresearch runs report <run-id> --runs runs      # report.html (also written automatically)
 uv run qresearch ui --runs runs --root data           # local UI on http://127.0.0.1:8000
+uv run qresearch jobs submit -c configs/my_first_backtest.yaml --root data --runs runs --wait
 uv run qresearch runs reproduce <run-id> --root data --runs runs
 ```
 

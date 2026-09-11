@@ -421,3 +421,45 @@ Relatedly, `filterwarnings = error` gained one narrowly-scoped exemption: starle
 TestClient trips an `anyio` alias deprecation on import. It is matched by message so our
 own deprecations still fail the suite — a blanket ignore would have been the easy wrong
 answer.
+
+## D48. Jobs are CLI subprocesses, one at a time — reviewed with the user
+
+The runner spawns `python -m qresearch.cli` and supervises it from a thread. The thread
+only waits on pipe reads, so the GIL never contends with the engine, and a crash or a
+300 MB peak stays in its own process.
+
+Progress needed no new instrumentation: `--verbose --json-logs` already emits `run
+started` / `fold complete` (fold, role, fills, return) / `run complete`, each tagged with
+`run_id`. The runner tails that stream. Had this not existed, the honest alternative was a
+callback interface on the engine that nothing else wanted.
+
+Concurrency defaults to 1. A sweep submitting fifty jobs must not try to run fifty
+processes against a benchmark that already peaks near 300 MB.
+
+A job record keeps the **exact argv**, shown in the UI and by `jobs show`, because "what
+did this actually run, and could I run it myself?" is the question the whole design exists
+to answer. Jobs live under `runs/.jobs/<id>/` beside the runs they produce, so a job, its
+config, and its results archive or delete together.
+
+## D49. The GET/HEAD-only test was replaced, not deleted — reviewed with the user
+
+`docs/workbench_plan.md` flagged this as the failure mode to watch: the UI's read-only
+guarantee was asserted by checking the route table exposed only GET/HEAD, and job
+cancellation is a DELETE.
+
+The replacement asserts the guarantee that actually matters — **not "no mutation" but "no
+mutation of results"**: browsing cannot change the set of runs or any run's economic
+digest, and every non-GET route must be job control (currently exactly
+`DELETE /api/jobs/{job_id}`, asserted by equality so a new one fails the test until it is
+justified). Cancelling destroys nothing; it stops work that has not finished.
+
+## D50. Fixed two faults the gates caught — **autonomous**
+
+`filterwarnings = error` and the test suite each caught a real defect rather than noise:
+
+* The runner iterated `process.stdout` without closing it, leaking a file descriptor per
+  job — invisible in a test run, material in a long-lived server. Fixed by
+  context-managing `Popen`.
+* FastAPI's `@app.on_event("shutdown")` is deprecated. That was *our* deprecation, not a
+  third party's, so it was fixed by moving to the lifespan API rather than adding an
+  exemption. The one standing exemption (starlette's anyio alias) remains the only one.

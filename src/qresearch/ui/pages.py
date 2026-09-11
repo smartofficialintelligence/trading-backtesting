@@ -71,7 +71,7 @@ def _signed(value: float | None, spec: str = "+.2%") -> str:
 
 def shell(title: str, body: str, *, active: str = "") -> str:
     """The app frame: nav, shared styles, page body."""
-    links = [("runs", "/"), ("compare", "/compare")]
+    links = [("runs", "/"), ("jobs", "/jobs"), ("compare", "/compare")]
     nav = "".join(
         f'<a href="{href}" class="{"on" if name == active else ""}">{name}</a>'
         for name, href in links
@@ -252,4 +252,105 @@ def not_found(message: str) -> str:
     return shell("not found", f'<h1>Not found</h1><p class="sub">{_e(message)}</p>')
 
 
-__all__ = ["Sequence", "compare_page", "not_found", "runs_page", "shell"]
+__all__ = [
+    "Sequence",
+    "compare_page",
+    "job_log_page",
+    "jobs_page",
+    "not_found",
+    "runs_page",
+    "shell",
+]
+
+
+_STATE_COLOUR = {
+    "queued": "",
+    "running": "",
+    "succeeded": "pos",
+    "failed": "neg",
+    "cancelled": "",
+}
+
+
+def jobs_page(jobs: Sequence[Any]) -> str:
+    """Submitted work, newest first, with live progress and the exact command."""
+    if not jobs:
+        return shell(
+            "jobs",
+            "<h1>No jobs</h1>"
+            '<p class="sub">Jobs appear here when a backtest is launched from the UI or '
+            "with <code>qresearch jobs submit</code>.</p>",
+            active="jobs",
+        )
+
+    rows = []
+    for job in jobs:
+        progress = f"{job.folds_complete} folds" if job.folds_complete else "—"
+        runs = (
+            " ".join(f'<a class="run" href="/runs/{_e(r)}">{_e(r[:14])}</a>' for r in job.run_ids)
+            or "—"
+        )
+        duration = f"{job.duration.total_seconds():.1f}s" if job.duration else "—"
+        cancel = (
+            f'<button class="ghost cancel" data-job="{_e(job.job_id)}">cancel</button>'
+            if not job.state.terminal
+            else ""
+        )
+        rows.append(
+            f'<tr><td><span class="pill">{_e(job.kind.value)}</span></td>'
+            f'<td class="{_STATE_COLOUR.get(job.state.value, "")}">{_e(job.state.value)}</td>'
+            f"<td>{_e(job.label or '—')}</td><td>{progress}</td><td>{runs}</td>"
+            f"<td>{duration}</td><td>{_e(job.message or '—')}</td>"
+            f'<td><a href="/jobs/{_e(job.job_id)}">log</a> {cancel}</td></tr>'
+        )
+
+    active = any(not j.state.terminal for j in jobs)
+    body = (
+        f'<h1>Jobs <span class="count">({len(jobs)})</span></h1>'
+        + ('<p class="sub">Refreshing while work is in flight.</p>' if active else "")
+        + '<div class="card"><table><thead><tr><th>kind</th><th>state</th><th>label</th>'
+        "<th>progress</th><th>runs</th><th>took</th><th>latest</th><th></th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
+        f"<script>{_JOBS_JS}</script>"
+    )
+    return shell("jobs", body, active="jobs")
+
+
+_JOBS_JS = """
+document.querySelectorAll('.cancel').forEach(b=>b.onclick=async e=>{
+  e.preventDefault(); b.disabled=true;
+  await fetch('/api/jobs/'+b.dataset.job,{method:'DELETE'}); location.reload();});
+if(document.querySelector('.cancel')) setTimeout(()=>location.reload(), 2000);
+"""
+
+
+def job_log_page(job: Any, lines: Sequence[dict[str, Any]], output: str) -> str:
+    """One job: what it ran, and what it said."""
+
+    def _row(line: dict[str, Any]) -> str:
+        noise = {"time", "message", "level", "logger"}
+        fields = {k: v for k, v in line.items() if k not in noise}
+        return (
+            f"<tr><td>{_e(line.get('time', ''))}</td>"
+            f"<td>{_e(line.get('message', ''))}</td>"
+            f'<td class="mono">{_e(fields)}</td></tr>'
+        )
+
+    events = "".join(_row(line) for line in lines)
+    command = " ".join(job.command)
+    body = (
+        f"<h1>{_e(job.label or job.kind.value)} "
+        f'<span class="count">{_e(job.state.value)}</span></h1>'
+        f'<div class="sub mono">{_e(job.job_id)}</div>'
+        '<h2>Command</h2><div class="card"><code>' + _e(command) + "</code>"
+        '<div class="legend">run this yourself and you get the same result</div></div>'
+        + (
+            f'<h2>Events</h2><div class="card"><table><thead><tr><th>time</th><th>message</th>'
+            f"<th>fields</th></tr></thead><tbody>{events}</tbody></table></div>"
+            if events
+            else ""
+        )
+        + f'<h2>Output</h2><div class="card"><pre class="mono">{_e(output[-20000:])}</pre></div>'
+        '<div class="toolbar"><a href="/jobs"><button class="ghost">back to jobs</button></a></div>'
+    )
+    return shell("job", body, active="jobs")
