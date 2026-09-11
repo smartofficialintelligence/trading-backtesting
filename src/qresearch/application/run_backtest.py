@@ -49,6 +49,7 @@ from qresearch.ids import DatasetId, InstrumentId
 from qresearch.logging import get_logger, run_context
 from qresearch.research.metrics import Metrics, annualization_for, compute_metrics
 from qresearch.research.splits import DataSplit, SplitRole, TimeRange
+from qresearch.research.trades import build_trades
 from qresearch.research.walk_forward import FixedSplitPlan, Fold, WalkForwardPlan, generate_folds
 from qresearch.simulation.engine import SimulationConfig, run_simulation
 from qresearch.simulation.events import WarningRecord
@@ -289,7 +290,13 @@ def _execute(
                 run_id=spec.run_id,
                 fold=fold.index,
             )
-            frames = _tag(result.frames(), fold.index, role)
+            frames = result.frames()
+            marks = {
+                str(r["instrument_id"]): float(r["mark"])
+                for r in frames["positions"].sort("at").iter_rows(named=True)
+            }
+            frames["trades"] = build_trades(frames["fills"], marks=marks)
+            frames = _tag(frames, fold.index, role)
             for name, frame in frames.items():
                 ledgers.setdefault(name, []).append(frame)
             metrics = compute_metrics(frames, bar_size=spec.bar_size, annualization=annualization)

@@ -6,6 +6,7 @@ import datetime as dt
 from pathlib import Path
 
 import duckdb
+import polars as pl
 import pytest
 import yaml
 from tests.conftest import IngestedFixture
@@ -405,3 +406,64 @@ def test_backtest_config_fill_rules_load_from_yaml(
         )
     )
     assert load_backtest_config(path).fill_rules == (FillRule.OPEN_OF_CURRENT_BAR,)
+
+
+# -- trade attribution ---------------------------------------------------------------------
+
+
+def test_every_dollar_of_equity_change_is_attributable_to_a_trade(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    """The identity that makes the trades ledger trustworthy: within each fold and role,
+    the equity change equals the sum of trade net P&L (open trades marked)."""
+    import json
+
+    from qresearch.research.trades import build_trades
+
+    result = run_backtest(
+        config(dataset_id=ingested.dataset_id), catalog=ingested.catalog, store=store
+    )
+    fills = store.load_frame(result.run_id, "fills")
+    curve = store.load_frame(result.run_id, "equity_curve")
+    positions = store.load_frame(result.run_id, "positions")
+    initial = json.loads((store.path_for(result.run_id) / "run_spec.json").read_text())
+    initial_cash = initial["simulation"]["initial_cash"]
+    assert fills.height > 0, "the fixture must trade"
+
+    for (fold, role), group in fills.group_by(["fold", "role"], maintain_order=True):
+        segment = curve.filter((pl.col("fold") == fold) & (pl.col("role") == role)).sort("at")
+        held = positions.filter((pl.col("fold") == fold) & (pl.col("role") == role)).sort("at")
+        marks = {str(r["instrument_id"]): float(r["mark"]) for r in held.iter_rows(named=True)}
+        trades = build_trades(group, marks=marks)
+        change = segment["equity"].tail(1)[0] - initial_cash
+        assert abs(change - trades["net_pnl"].sum()) / initial_cash < 1e-12, f"fold {fold}/{role}"
+
+
+def test_the_trades_ledger_is_persisted_and_reconciles_with_the_fills(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    result = run_backtest(
+        config(dataset_id=ingested.dataset_id), catalog=ingested.catalog, store=store
+    )
+    trades = store.load_frame(result.run_id, "trades")
+    fills = store.load_frame(result.run_id, "fills")
+    assert trades.height > 0
+    assert {"fold", "role", "net_pnl", "is_open", "direction"} <= set(trades.columns)
+    assert trades.height <= fills.height, "trades group fills, never multiply them"
+    friction = float(
+        (fills["quantity"] * (fills["half_spread"] + fills["slippage"]) + fills["fee"]).sum()
+    )
+    assert abs(float(trades["costs"].sum()) - friction) / max(friction, 1.0) < 1e-12
+
+
+def test_metrics_carry_round_trip_statistics(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    result = run_backtest(
+        config(dataset_id=ingested.dataset_id), catalog=ingested.catalog, store=store
+    )
+    stats = result.aggregate["test"].trades
+    assert stats is not None
+    assert stats.trade_count > 0
+    assert stats.win_rate is not None and 0.0 <= stats.win_rate <= 1.0
+    assert stats.long_count + stats.short_count == stats.trade_count

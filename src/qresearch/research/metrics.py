@@ -31,6 +31,7 @@ import polars as pl
 from pydantic import Field
 
 from qresearch.config import FrozenModel
+from qresearch.research.trades import TradeStats, build_trades, trade_stats
 from qresearch.time import parse_duration
 
 MINUTES_PER_DAY = 1440
@@ -86,6 +87,8 @@ class Metrics(FrozenModel):
     mean_participation: float | None
     warning_count: int
     annualization: AnnualizationPolicy
+    trades: TradeStats | None = None
+    """Round-trip statistics. None when the ledgers carry no fills."""
 
 
 def periodic_equity(equity_curve: pl.DataFrame, bar_size: str) -> pl.DataFrame:
@@ -186,6 +189,7 @@ def compute_metrics(
         wins = (returns > 0).filter(exposed.to_list())
         hit_rate = float(wins.mean()) if wins.len() else None  # type: ignore[arg-type]
 
+    trades = _trade_stats(frames)
     return Metrics(
         periods=n,
         start_equity=start,
@@ -207,7 +211,28 @@ def compute_metrics(
         mean_participation=mean_participation,
         warning_count=int(warnings["occurrences"].sum()) if not warnings.is_empty() else 0,
         annualization=annualization,
+        trades=trades,
     )
+
+
+def _trade_stats(frames: Mapping[str, pl.DataFrame]) -> TradeStats | None:
+    """Round-trip statistics from the fill ledger, marking open trades where possible."""
+    fills = frames.get("fills")
+    if fills is None or fills.is_empty():
+        return None
+    required = {"instrument_id", "side", "quantity", "fill_at", "reference_price", "price", "fee"}
+    if not required.issubset(fills.columns):
+        # A partial ledger (an older artifact schema, or a caller scoring a subset of
+        # columns) still yields every other metric; trade attribution simply needs more.
+        return None
+    positions = frames.get("positions")
+    marks: dict[str, float] = {}
+    if positions is not None and not positions.is_empty():
+        # Build from rows: pairing separate group_by results is order-unsafe and would
+        # silently mark one instrument at another's price.
+        for row in positions.sort("at").iter_rows(named=True):
+            marks[str(row["instrument_id"])] = float(row["mark"])
+    return trade_stats(build_trades(fills, marks=marks))
 
 
 def _drawdown(curve: pl.DataFrame) -> tuple[float, _dt.timedelta]:

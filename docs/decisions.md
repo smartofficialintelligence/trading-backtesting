@@ -337,3 +337,33 @@ timelines that mean different things.
 
 The test is permanent, marked `oracle`, skipped unless the optional extra is installed,
 and runs in CI. Its value is catching engine drift that our own tests would agree with.
+
+## D43. Trades are flat-to-flat, not FIFO lots — reviewed with the user
+
+A trade is one flat-to-flat episode per instrument: it opens when the position leaves
+zero, absorbs every add and trim, and closes when it returns to zero. A flip closes one
+trade and opens another at the same fill, splitting that fill's costs between them.
+
+Flat-to-flat was chosen over FIFO because the portfolio keeps an *average* cost basis, so
+flat-to-flat cannot disagree with the accounting it is derived from and needs no matching
+rules to argue about. The cost is that a long accumulation followed by a partial exit is
+one trade rather than several — which is the honest description of what the portfolio did.
+
+Validated by an identity asserted on real data across all eight fold/roles: **within each
+fold and role, the equity change equals the sum of trade net P&L to 1.15e-15**, with open
+trades marked. Friction reconciles to exactly zero difference against the fill ledger.
+
+Note that a trade's `net_pnl` is *not* the engine's `realized_pnl`: the former measures
+against the untouched reference price and subtracts every cost including fees, the latter
+measures against fill prices and keeps fees on their own ledger line. Both are correct;
+they answer different questions.
+
+## D44. An unvalued open trade reports null P&L, not zero and not the cash outflow — **autonomous**
+
+Caught while testing: an open position with no mark was reporting its accumulated cash
+outflow (−1000 on a 10-unit buy at 100), which reads as a total loss. Zero would have been
+a guess. An unpriced position has *unknown* P&L, so `gross_pnl`, `net_pnl`,
+`return_on_notional`, and `exit_price` are null while `costs` — which is known — is kept.
+
+Relatedly, `profit_factor` is null rather than infinite when a run has no losing trades:
+an infinity in a headline metric is worse than an absence.
