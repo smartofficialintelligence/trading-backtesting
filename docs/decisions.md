@@ -813,3 +813,66 @@ at. **July–December 2024 is sealed**: it is ingested, and nothing is computed 
 features, event study or backtest) until a candidate and its parameters are fixed. It is
 then run once, and the result is reported whatever it is. MATICUSDT is left out because
 Binance migrated MATIC to POL during that period.
+
+## D69. Hold until the mean, buy crashes only: a candidate that clears perp costs on development data — **autonomous**
+
+**Diagnosis.** The rule strategy is stateless (`Rule.target`): it holds a position only
+while the entry condition is still true. The 3σ fade therefore exited at 2.99σ, with a
+median hold of ten minutes and 6.3 bps gross per round trip on validation. Holding a fixed
+time does not rescue it: the same entries were worth ~9 bps after 30 minutes to 4 hours
+and 15 bps after 8, against the $10k break-even of 22 (spot) or 11 (perps).
+
+**Event study, Jan–Jun 2024.** An episode starts on the first bar where |z72| reaches k.
+Entry is at the next open, fading the stretch, and the exit comes when z crosses back
+through 0 (capped at 24h) or at a fixed horizon. Raw gross grows with k, but most of it is
+the market. After subtracting the equal-weight ten-name market over the same window
+(t clustered by entry day, since a crash stretches every name at once), almost nothing is
+left except one side of one subset:
+
+| buy the crash, top-volatility names, exit at mean | beats market by | t | events | months positive |
+|---|---|---|---|---|
+| 2σ | 12.7 bps | 3.5 | 1,850 | 5/6 |
+| 3σ | 15.9 bps | 2.4 | 521 | 5/6 |
+| 4σ | 20.9 bps | 2.0 | 123 | 4/6 |
+| 5σ | 94.8 bps | 2.5 | 26 | 6/6 |
+
+Across all ten names the same trade earns nothing over the market, and fading spikes loses
+22–41 bps at 4–5σ because spikes keep going. About 70 cells were examined, and one t of 2–3
+among them is expected by chance. The evidence is the pattern rising steadily with k, not
+any single cell.
+
+**Strategy.** `zscore_reversion` (`src/qresearch/strategy/reversion.py`) enters on a
+stretch and exits when z comes back through `exit_z`. It reads what it holds from the
+decision context's positions and pending orders, and emits nothing while holding, so a
+drifting position is not rebalanced (and charged) every bar. The candidate is long only,
+enters at z72 ≤ −3 with `vol_12_xrank` ≥ 0.8, exits at z = 0, weight 0.2, at most two
+positions, $10k (`configs/examples/crash_reversion_long_only.yaml`).
+
+**Development results**, 11 folds. Parameters were chosen with the whole half-year
+visible, so these test folds are not out of sample.
+
+| | old 3σ rule, test | candidate, validation | candidate, test | both sides (control), test |
+|---|---|---|---|---|
+| no costs | — | +12.1% | +9.5% (Sharpe 1.89) | +12.1% |
+| perp: 0.43 spread + 5 bps | — | +7.8% | **+4.7%** (Sharpe 1.02) | +1.7% |
+| spot retail: 0.72 + 10 bps | −24.0% | +3.9% | +0.4% | −7.3% |
+
+On test: 199 trades (2.6 a day), 68% winners, median hold 3.5 hours, exactly 2 fills per
+trade, 23.4 bps gross per trade. The price is drawdown: **13.1%** maximum, with a worst
+trade of −14%, because a crash buyer holds through whatever is left of the crash.
+
+**Where the 23.4 bps comes from.** Over the same holds the equal-weight market rose 17.5
+bps per trade. Plain drift accounts for 0.5 of that (the market gained 5.6% over the whole
+half-year), so **~17 bps is the whole market bouncing after the crashes the strategy
+bought**, and ~6 is the name's own reversion beyond the market. That ~6 alone would not pay
+perp costs. The strategy is a bet that market-wide crashes rebound within hours. It held
+in Jan–Jun 2024, and a bear market is exactly what can break it.
+
+**Sealed periods.** H2 2024 (D68) is out of sample but also mostly rising, so it cannot
+test that risk. **Calendar 2022**, a bear market with the Terra/LUNA and FTX collapses, is
+ingested as a second sealed period on the same terms. Each is run once with the parameters
+above, and its result is reported whatever it is.
+
+Not modelled: perp costs are applied to spot prices (no basis or funding); maker execution;
+impact beyond the participation model. The candidate is long only, so unlike the old
+strategy it can run on a spot account.

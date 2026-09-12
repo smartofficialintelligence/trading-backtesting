@@ -1,0 +1,68 @@
+# Buy crashes in the most volatile names; sell when price is back at its mean (D69).
+#
+#   qresearch backtest run -c configs/examples/crash_reversion_long_only.yaml \
+#       --root data --runs runs
+#
+# Why this shape, from an event study on Jan-Jun 2024 (docs/decisions.md D69):
+#   - hold until the z-score is back at 0: the rule-based fade exited at 2.99 sigma and
+#     kept ~6 bps of a reversion worth ~25;
+#   - long only: after removing the market's own move, crashes in volatile names revert
+#     and spikes keep going, so the short side paid for the long side's edge;
+#   - top-volatility names only: across all ten names the same trade earned nothing over
+#     the market.
+#
+# Chosen on Jan-Jun 2024 with every period visible, so its "test" folds are not
+# out-of-sample. July-December 2024 is the sealed holdout (D68).
+#
+# dataset_id below is the 6-month 5m Binance pull; replace it with your own.
+
+cost_scenarios:
+- free
+- measured_perp
+- measured_retail
+cross_sectional:
+- column: vol_12
+dataset_id: ds_1cbb11366c98ed99
+experiment_id: crash-reversion-dev
+features:
+- kind: rolling_volatility
+  params:
+    window: 12
+- kind: rolling_zscore
+  params:
+    window: 72
+fill_rules:
+- open_of_current_bar
+label: long-only 3 sigma, top-vol, exit at mean
+plan:
+  kind: rolling
+  label_horizon: PT1H
+  purge: PT1H
+  test: P7D
+  train: P21D
+  validation: P7D
+  warmup: PT12H
+seed: 0
+simulation:
+  constraints:
+    allow_short: false
+    max_gross_exposure: 0.8
+    max_position_weight: 0.3
+  end_of_run: liquidate
+  execution:
+    expire_after: PT5M
+    liquidity_lookback_bars: 60
+    order_latency: PT1S
+    participation_cap: 0.05
+  initial_cash: 10000
+strategy:
+  kind: zscore_reversion
+  params:
+    zscore: zscore_72
+    entry_z: 3.0
+    exit_z: 0.0
+    sides: long
+    rank_feature: vol_12_xrank
+    min_rank: 0.8
+    weight: 0.2
+    max_positions: 2
