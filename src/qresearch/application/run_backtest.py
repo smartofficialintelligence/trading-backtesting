@@ -90,6 +90,14 @@ COST_SCENARIOS: dict[str, CostConfig] = {
         commission_bps=0.0,
         slippage=SlippageConfig(kind=SlippageKind.PARTICIPATION, coefficient=25.0),
     ),
+    # Binance USD-M perp spread at the same fills (0.43 bps, D67) with the 5 bps base taker
+    # fee a $10k account pays at Kraken Futures or OKX (D68). A cost sensitivity applied to
+    # spot bars, not a perp backtest: basis and funding are not modelled.
+    "measured_perp": CostConfig(
+        half_spread_bps=0.43,
+        commission_bps=5.0,
+        slippage=SlippageConfig(kind=SlippageKind.PARTICIPATION, coefficient=25.0),
+    ),
     "stressed": CostConfig(
         half_spread_bps=10.0,
         commission_bps=3.0,
