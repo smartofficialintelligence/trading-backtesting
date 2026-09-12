@@ -610,7 +610,7 @@ multiple comparisons a reporting requirement rather than a footnote.
 symmetric entry threshold varied independently would generate long −2 / short +3 pairs
 nobody intended to test.
 
-## D64. Result: the signal is real and does not clear costs — reviewed with the user
+## D64. Result: the signal is real and does not clear costs — reviewed with the user — *friction units corrected in D67*
 
 Six months of 5-minute Binance bars (10 instruments, 524,160 rows, Jan-Jun 2024),
 11 walk-forward folds. Strategy: long the most-volatile names when stretched below -3σ of
@@ -664,7 +664,7 @@ Trimming can leave a fold empty -- an equity fold whose test window falls outsid
 sessions has no snapshots -- so stitching drops empty curves rather than asking an empty
 column for its minimum.
 
-## D66. The spread was measured; the fee is published, and it is the binding constraint — reviewed with the user
+## D66. The spread was measured; the fee is published, and it is the binding constraint — reviewed with the user — *spread figure corrected in D67*
 
 Two cost inputs were wrong in opposite directions, and the net effect is worse than the
 base scenario suggested.
@@ -696,3 +696,103 @@ Caveat that stops this being a recommendation: the maker row assumes passive fil
 this platform cannot simulate — bar data cannot model queue position, and a limit order
 that earns the spread is also an order that does not always fill. Testing it needs the
 quote/trade execution model in ARCHITECTURE.md sec. 11, not another cost parameter.
+
+## D67. Cost inputs audited: units, spread source, venues, fees — reviewed with the user
+
+Asked what service the cost estimate came from and whether the alternatives had been
+checked. The honest answer was one venue's public archive, one day, three symbols, and a
+fee quoted from memory. This entry replaces that.
+
+**Units (corrects D64).** Every bps figure the engine and reports produce is per unit of
+*traded* notional — per side. A round trip trades a position twice (2.02x entry notional
+on this strategy), so round-trip figures are double. D64's "roughly 2 bps of affordable
+round-trip friction" was wrong: the 3σ survivor's gross edge on test is **3.25 bps per
+side (~6.6 round trip)**, against **4.15 bps per side (~8.3) of base-scenario friction**:
+2.50 spread, 0.65 impact, 1.00 commission.
+
+**Framework.** Cost per fill = half-spread + size impact + commission, each in bps of fill
+notional; a strategy breaks even when gross edge per side equals cost per side. Only the
+spread is measured from data. Impact is a model — 25 bps × quantity / trailing bar volume;
+median participation 1.6%, and 27% of test fills already hit the 5% cap at $100k.
+Commission is a published tariff that depends on venue, region and volume.
+
+**Spread: source and method.** `data.binance.vision`, Binance's public archive. Spot has no
+quote history, so the half-spread is inferred from `aggTrades`: per 5-second window, mean
+buyer-initiated price minus mean seller-initiated price, over the mean price, halved;
+median of positive windows.
+
+- *Calibrated* where quotes exist: DOGEUSDT perps 2024-03-12, inferred 0.293 vs quoted
+  0.295 bps (0.99x). Perp quote archives stop after 2024-03-30, so the fill days cannot be
+  checked the same way.
+- *Validated* independently: on 2024-04-28 nine of ten spot names measured exactly half a
+  price tick (AVAX 1.430 vs 1.436, ADA 1.061 vs 1.063, XRP 0.961 vs 0.962, ...). Those books
+  were one tick wide, so their spread is set by tick size, not sampled.
+- *Conditioned* on the strategy: the 5s windows around its fills on each name's three
+  busiest test days, weighted by traded notional.
+
+| name | notional share | spot at fills | perp at fills |
+|---|---|---|---|
+| DOGE | 20.3% | 0.60 | 0.48 |
+| SOL | 17.5% | 0.42 | 0.34 |
+| AVAX | 17.3% | 1.46 | 0.32 |
+| ADA | 9.3% | 0.98 | 0.83 |
+| LINK | 8.8% | 0.35 | 0.28 |
+| BNB | 7.6% | 0.77 | 0.21 |
+| XRP | 7.1% | 0.80 | 0.81 |
+| ETH | 5.3% | 0.08 | 0.21 |
+| MATIC | 4.6% | 0.56 | 0.59 |
+| BTC | 2.3% | 0.14 | 0.23 |
+| **weighted** | | **0.72** | **0.43** |
+
+Perp spreads widen 1.2–1.9x around fills; a tick-bound spot book cannot widen. D66's 0.4
+bps was extrapolated from BTC, SOL and DOGE and missed AVAX, ADA, BNB, XRP and MATIC. The
+`measured_*` scenarios now use 0.72. Rerun, six months, test, 3σ survivor:
+
+| scenario | commission | test return | annualised | Sharpe | cost drag | D66 at 0.4 bps |
+|---|---|---|---|---|---|---|
+| `measured_retail` | 10 bps | −23.98% | −72.8% | −7.81 | 37.7% | −23.16% |
+| `measured_vip` | 2 bps | **−0.51%** | −2.4% | −0.06 | 11.3% | +0.57% |
+| `measured_maker` | 0 bps | +6.40% | +34.2% | 1.86 | 4.6% | +7.55% |
+
+The 2 bps row turns negative. `measured_maker` is misnamed: it still *pays* the half-spread,
+so it is a zero-fee taker, not a maker — a real passive fill would earn it.
+
+**Fees.** Read from venue pages on 2026-09-12. Taker bps per side; "at ~$13M" is the tier
+this strategy's own volume reaches at $100k (4.35x equity per day).
+
+| venue | product | base | at ~$13M / 30d | best published | source |
+|---|---|---|---|---|---|
+| Binance | spot | 10 (7.5 in BNB) | not captured | 2.3 | binance.com/en/fee/schedule |
+| OKX (global) | spot | 10 | 6.5 (notice) | 1.5 (live) / 1.75 (notice) | okx.com/fees; fee framework notice, Nov 2025 — they disagree |
+| Bybit | spot | 10 | not captured | 4.5 | bybit help centre |
+| Kraken | spot | 80 | not captured | 5 | kraken.com/features/fee-schedule |
+| Coinbase Advanced | spot | 60 UNVERIFIED | — | 4 UNVERIFIED | pages returned 403 |
+| Binance.US | spot, Tier 0 pairs | 1 | 1 | 1 | binance.us/fees; pair list not in page |
+| Kraken Futures | perp | 5 | 4.0 | 1.25 | futures.kraken.com fee API |
+| OKX (global) | perp | 5 | 4.0 | 1.5 | okx.com fee framework, Nov 2025 |
+| Bybit | perp | 5.5 | not captured | 3.0 | bybit help centre |
+| Binance | USDⓈ-M perp | could not verify | | | table renders client-side |
+
+Region decides the list before fees do: Bybit and Kraken Futures exclude US persons, and
+Binance.com lists the US as restricted (UNVERIFIED). OKX quotes different base fees by
+region, from 8/10 to 70/70.
+
+**Spread across venues.** Quoted top of book, 10 polls over one minute on 2026-09-12,
+weighted by the strategy's mix: Binance spot 0.64, Binance perp 0.64, Bybit perp 0.69,
+OKX perp 0.70, Bybit spot 0.74, OKX spot 0.79, Kraken spot 0.81, Coinbase 1.01, Kraken
+Futures 1.11, Binance.US 2.34 (USDT pairs) / 5.41 (USD pairs). On the liquid names the
+major venues quote the same spread; **the venue choice moves the fee, not the spread**.
+Today's prices and ticks over one minute — this ranks venues, it does not re-price 2024.
+
+**Conclusion.** Taker, per side: gross 3.25 bps less spread and modelled impact leaves
+**~2.2 bps of fee headroom on perps and ~1.9 on spot**. The cheapest route found at the
+strategy's own volume is perps at 4.0 bps, costing ~5.1 per side and losing ~1.8. Taker
+fees near 2 bps need ≥$100M per 30 days (Kraken Futures), 7.7x today's capital, while a
+quarter of fills are already participation-capped at $100k: the strategy cannot trade its
+way into a tier that rescues it. Binance.US Tier 0 is the only sub-2 bps taker fee without a
+volume requirement, and its books are 4–8x wider on this mix with depth unmeasured.
+
+Not settled here: maker execution (needs the quote-level model in ARCHITECTURE.md sec.
+11); executing a spot-bar signal on perps (basis and funding — test by ingesting perp
+klines, which the Binance adapter does not yet support); and impact, which is modelled
+rather than measured.
