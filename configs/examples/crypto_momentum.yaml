@@ -26,7 +26,7 @@ strategy:
   params: { feature: ret_1, weight: 0.4, threshold: 0.0 }
 
 simulation:
-  initial_cash: 100000
+  initial_cash: 10000
   execution:
     submission_latency: PT0S
     order_latency: PT1S

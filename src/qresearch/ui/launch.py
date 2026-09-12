@@ -214,7 +214,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "features": [{"kind": "lagged_return", "params": {"lag": 1}}],
     "transforms": [],
     "strategy": {"kind": "lagged_signal", "params": {"feature": "ret_1", "weight": 0.4}},
-    "simulation": {"initial_cash": 100000.0},
+    "simulation": {"initial_cash": 10000.0},
     # ISO-8601 durations, not timedelta objects: these are rendered straight into form
     # fields and posted back, so they must already be in the wire format the config
     # parser accepts. A timedelta would serialise as "6:00:00", which does not parse.

@@ -11,6 +11,8 @@
 #
 # Read the 'free' scenario next to 'base': the gap between them (13.9% of equity) is the
 # entire question. Gross P&L is $12.64 per trade against $16.05 of modelled friction.
+# Those dollar figures were at $100k; capital is now $10k (D68), which is how much would
+# actually be risked. Percentages and bps carry over; the fee tier gets worse (D67).
 #
 # dataset_id below is a 6-month 5m Binance pull; replace it with your own.
 
@@ -54,7 +56,7 @@ simulation:
     liquidity_lookback_bars: 60
     order_latency: PT1S
     participation_cap: 0.05
-  initial_cash: 100000
+  initial_cash: 10000
 strategy:
   kind: rule
   params:

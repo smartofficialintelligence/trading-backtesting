@@ -796,3 +796,20 @@ Not settled here: maker execution (needs the quote-level model in ARCHITECTURE.m
 11); executing a spot-bar signal on perps (basis and funding — test by ingesting perp
 klines, which the Binance adapter does not yet support); and impact, which is modelled
 rather than measured.
+
+## D68. Research capital is $10k; July–December 2024 is sealed as the holdout — capital at the user's request; the holdout is **autonomous**
+
+The user will not start with $100k. The crypto example configs, `my_first_backtest.yaml`
+and the UI launch form now start at $10,000; the engine's library default and the equities
+example are unchanged. Scale leaves returns, drawdowns and bps as they were. What it changes
+is the fee tier: a $10k account trades about $1.3M a month and pays base rates, ~10 bps per
+side on spot and ~5 on perps (D67). A strategy therefore needs roughly **22 bps gross per
+round trip on spot and 11 on perps** before it breaks even.
+
+Jan–Jun 2024 has been evaluated over and over while the strategy, its threshold and its
+cost model were chosen, test folds included. Its test folds can no longer serve as
+out-of-sample evidence, so that period is now a development set and anything may be looked
+at. **July–December 2024 is sealed**: it is ingested, and nothing is computed on it (no
+features, event study or backtest) until a candidate and its parameters are fixed. It is
+then run once, and the result is reported whatever it is. MATICUSDT is left out because
+Binance migrated MATIC to POL during that period.

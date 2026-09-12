@@ -51,7 +51,7 @@ strategy:
     rank_by: vol_60
 
 simulation:
-  initial_cash: 100000
+  initial_cash: 10000
   execution:
     order_latency: PT1S
     expire_after: PT5M

@@ -325,7 +325,7 @@ def launch_page(default_config: dict[str, Any]) -> str:
         '<fieldset><legend>strategy</legend><div id="strategy"></div></fieldset>'
         "<fieldset><legend>simulation</legend>"
         '<div class="row"><label for="cash">initial cash</label>'
-        '<input id="cash" type="number" step="1000" value="100000"></div>'
+        '<input id="cash" type="number" step="1000" value="10000"></div>'
         '<div class="row"><label>cost scenarios</label><span id="scenarios"></span></div>'
         '<div class="row"><label>fill rules</label><span id="fillrules"></span></div></fieldset>'
         '<fieldset><legend>walk-forward plan</legend><div id="plan"></div></fieldset>'
