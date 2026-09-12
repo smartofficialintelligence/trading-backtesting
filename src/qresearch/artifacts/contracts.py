@@ -39,6 +39,20 @@ class FeatureRef(FrozenModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class CrossSectionalRef(FrozenModel):
+    """A rank computed across instruments at each instant.
+
+    Separate from ``FeatureRef`` because the timing is different in kind: a per-instrument
+    feature is usable when its own inputs are in, a rank only when every member's value is
+    (ARCHITECTURE.md sec. 9, cross-sectional asynchrony).
+    """
+
+    column: str = Field(min_length=1)
+    min_members: int = Field(default=2, ge=2)
+    pct: bool = True
+    descending: bool = False
+
+
 class TransformRef(FrozenModel):
     kind: str = Field(min_length=1)
     columns: tuple[str, ...] = Field(min_length=1)
@@ -57,6 +71,9 @@ class RunSpec(FrozenModel):
     bar_size: str
     calendar_id: str
     features: tuple[FeatureRef, ...] = ()
+    cross_sectional: tuple[CrossSectionalRef, ...] = ()
+    """Ranks computed across instruments after the per-instrument features."""
+
     feature_fingerprints: tuple[str, ...] = ()
     """Resolved ``FeatureSpec.fingerprint`` per feature, so a code change to a feature
     implementation (which bumps its version) changes the run id."""

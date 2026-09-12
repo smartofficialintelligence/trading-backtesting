@@ -33,6 +33,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Final
 
 import polars as pl
@@ -43,7 +44,9 @@ from qresearch.data.adapters.base import (
     apply_duplicate_policy,
     derive_bar_bounds,
 )
+from qresearch.data.contracts import AssetClass, Instrument, SymbolAlias
 from qresearch.data.manifests import SourceRef, TimestampLabel
+from qresearch.ids import InstrumentId
 from qresearch.logging import get_logger
 from qresearch.time import UTC, ensure_utc, now_utc, parse_duration
 
@@ -426,3 +429,60 @@ class BinanceKlineAdapter:
                 "the venue symbol cannot be resolved"
             )
         return out
+
+
+def fetch_instruments(
+    symbols: Sequence[str],
+    *,
+    base_url: str = DATA_API,
+    venue: str = "BINANCE",
+    calendar_id: str = "24x7:1",
+    listed_from: _dt.datetime | None = None,
+    timeout: float = 20.0,
+) -> tuple[Instrument, ...]:
+    """Build :class:`Instrument` definitions from the venue's own ``exchangeInfo``.
+
+    Tick size, step size, and base/quote assets are facts the venue publishes; hand-writing
+    them into a config is tedious and easy to get subtly wrong -- a wrong
+    ``quantity_increment`` silently changes every order size in a backtest.
+
+    ``listed_from`` dates the symbol aliases. It defaults to well before Binance existed,
+    which is right for a fixed universe but wrong if you care about when a pair actually
+    listed; supply it explicitly for a point-in-time universe.
+    """
+    wanted = [s.upper() for s in symbols]
+    url = f"{base_url.rstrip('/')}/api/v3/exchangeInfo"
+    request = urllib.request.Request(url, headers={"User-Agent": "qresearch"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        payload = json.load(response)
+
+    by_symbol = {s["symbol"]: s for s in payload.get("symbols", [])}
+    missing = [s for s in wanted if s not in by_symbol]
+    if missing:
+        raise BinanceError(f"unknown symbols on this venue: {missing}")
+
+    effective_from = listed_from or _dt.datetime(2015, 1, 1, tzinfo=UTC)
+    out = []
+    for symbol in wanted:
+        info = by_symbol[symbol]
+        if info.get("status") != "TRADING":
+            log.warning("%s is not TRADING (status=%s)", symbol, info.get("status"))
+        filters = {f["filterType"]: f for f in info.get("filters", [])}
+        tick = filters.get("PRICE_FILTER", {}).get("tickSize", "0.01")
+        step = filters.get("LOT_SIZE", {}).get("stepSize", "0.00000001")
+        out.append(
+            Instrument(
+                instrument_id=InstrumentId(f"CRYPTO:{symbol}"),
+                asset_class=AssetClass.CRYPTO,
+                venue=venue,
+                quote_currency=info["quoteAsset"],
+                base_currency=info["baseAsset"],
+                price_increment=Decimal(str(tick)).normalize(),
+                quantity_increment=Decimal(str(step)).normalize(),
+                calendar_id=calendar_id,
+                aliases=(
+                    SymbolAlias(symbol=symbol, source=SOURCE_NAME, effective_from=effective_from),
+                ),
+            )
+        )
+    return tuple(out)

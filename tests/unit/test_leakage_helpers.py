@@ -27,7 +27,9 @@ from qresearch.features.technical import (
     LaggedReturn,
     MinuteOfDay,
     RelativeVolume,
+    RollingRange,
     RollingVolatility,
+    RollingZScore,
 )
 
 KEY = ["instrument_id", "bar_start"]
@@ -66,6 +68,12 @@ HONEST = {
     "vol_log_3_gap_tolerant": pipeline(RollingVolatility(3, kind="log", require_contiguous=False)),
     "rvol_4": pipeline(RollingVolatility(2), RelativeVolume(4)),
     "bar_range": pipeline(BarRange()),
+    "zscore_10": pipeline(RollingZScore(window=10)),
+    "zscore_gap_tolerant": pipeline(RollingZScore(window=5, require_contiguous=False)),
+    "range_8": pipeline(RollingRange(window=8)),
+    "mean_reversion_set": pipeline(
+        RollingZScore(window=20), RollingVolatility(window=20), RollingRange(window=20)
+    ),
     "time": pipeline(MinuteOfDay(), MinuteOfDay("sin"), DayOfWeek()),
     "everything": pipeline(
         LaggedReturn(1),

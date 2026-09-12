@@ -27,6 +27,7 @@ import polars as pl
 from pydantic import Field
 
 from qresearch.artifacts.contracts import (
+    CrossSectionalRef,
     FeatureRef,
     FoldMetrics,
     RunResult,
@@ -42,6 +43,7 @@ from qresearch.data.calendars import attach_sessions, get_calendar
 from qresearch.data.catalog import DatasetCatalog
 from qresearch.data.manifests import DatasetManifest
 from qresearch.data.point_in_time import UnfilteredScan
+from qresearch.features.cross_sectional import CrossSectionalRank, compute_cross_sectional
 from qresearch.features.pipeline import compute_features
 from qresearch.features.registry import build_feature, build_transform
 from qresearch.features.transforms import FittedState, TrainingData, Transform
@@ -81,6 +83,9 @@ class BacktestConfig(FrozenModel):
     dataset_id: DatasetId
     instrument_ids: tuple[str, ...] | None = None
     features: tuple[FeatureRef, ...] = ()
+    cross_sectional: tuple[CrossSectionalRef, ...] = ()
+    """Ranks across instruments, computed after the per-instrument features."""
+
     transforms: tuple[TransformRef, ...] = ()
     strategy: StrategyRef
     simulation: SimulationConfig = SimulationConfig()
@@ -133,6 +138,7 @@ def resolve_spec(
         bar_size=manifest.identity.bar_size,
         calendar_id=manifest.identity.calendar_id,
         features=config.features,
+        cross_sectional=config.cross_sectional,
         feature_fingerprints=fingerprints,
         transforms=config.transforms,
         strategy=config.strategy,
@@ -426,7 +432,23 @@ def _load_bars(catalog: DatasetCatalog, spec: RunSpec) -> pl.DataFrame:
 
 def _compute_features(bars: pl.DataFrame, spec: RunSpec) -> pl.DataFrame:
     features = [build_feature(f.kind, f.params) for f in spec.features]
-    return compute_features(bars, features)
+    frame = compute_features(bars, features)
+    if not spec.cross_sectional:
+        return frame
+    ranks = [
+        CrossSectionalRank(
+            column=r.column, min_members=r.min_members, pct=r.pct, descending=r.descending
+        )
+        for r in spec.cross_sectional
+    ]
+    missing = sorted({r.column for r in ranks} - set(frame.columns))
+    if missing:
+        raise ValueError(
+            f"cross-sectional ranks reference columns {missing} that no feature produces; "
+            f"available: "
+            f"{sorted(set(frame.columns) - {'instrument_id', 'bar_start', 'available_at'})}"
+        )
+    return compute_cross_sectional(frame, ranks)
 
 
 def _fit_and_apply(

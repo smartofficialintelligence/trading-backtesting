@@ -195,3 +195,81 @@ class DayOfWeek:
     def expression(self) -> pl.Expr:
         # Polars weekday() is ISO: Monday = 1 .. Sunday = 7.
         return pl.col("bar_start").dt.weekday().cast(pl.Int32) - 1
+
+
+@dataclass(frozen=True, slots=True)
+class RollingZScore:
+    """How far the current price sits from its recent mean, in standard deviations.
+
+    ``(close - mean(window)) / std(window)``, where the window ends at and includes the
+    current bar. This is the canonical mean-reversion signal: a large negative value says
+    the price is stretched below its own recent average.
+
+    It measures *stretch*, not direction of travel, and says nothing about whether the
+    mean is itself moving. In a trend it is persistently signed and reverts slowly or not
+    at all -- which is the honest reason mean-reversion strategies need a regime filter
+    rather than a stretch threshold alone.
+
+    Null where the window's standard deviation is zero: a flat window has no scale to
+    measure against, and an infinite z-score is not a feature value.
+    """
+
+    window: int = 20
+    column: str = "close"
+    require_contiguous: bool = True
+
+    def __post_init__(self) -> None:
+        if self.window < 2:
+            raise ValueError(f"window must be >= 2 to form a standard deviation, got {self.window}")
+
+    @property
+    def spec(self) -> FeatureSpec:
+        suffix = "" if self.column == "close" else f"_{self.column}"
+        return FeatureSpec(
+            name=f"zscore{suffix}_{self.window}",
+            implementation=_qualname(self),
+            inputs=(self.column,),
+            # The window includes the current bar, so it reaches back window - 1 bars.
+            lookback_bars=self.window - 1,
+            params={"window": self.window, "column": self.column},
+            require_contiguous=self.require_contiguous,
+        )
+
+    def expression(self) -> pl.Expr:
+        value = pl.col(self.column)
+        mean = value.rolling_mean(window_size=self.window, min_samples=self.window)
+        std = value.rolling_std(window_size=self.window, min_samples=self.window)
+        return pl.when(std > 0).then((value - mean) / std).otherwise(None)
+
+
+@dataclass(frozen=True, slots=True)
+class RollingRange:
+    """High-to-low range over the window, as a fraction of the latest close.
+
+    A cheaper, more robust measure of variability than return volatility: it responds to a
+    single violent bar rather than needing several, and is not thrown by a run of
+    identical closes. Useful as the selection signal in "trade the most variable name".
+    """
+
+    window: int = 20
+    require_contiguous: bool = True
+
+    def __post_init__(self) -> None:
+        if self.window < 1:
+            raise ValueError(f"window must be >= 1, got {self.window}")
+
+    @property
+    def spec(self) -> FeatureSpec:
+        return FeatureSpec(
+            name=f"range_{self.window}",
+            implementation=_qualname(self),
+            inputs=("high", "low", "close"),
+            lookback_bars=self.window - 1,
+            params={"window": self.window},
+            require_contiguous=self.require_contiguous,
+        )
+
+    def expression(self) -> pl.Expr:
+        high = pl.col("high").rolling_max(window_size=self.window, min_samples=self.window)
+        low = pl.col("low").rolling_min(window_size=self.window, min_samples=self.window)
+        return pl.when(pl.col("close") > 0).then((high - low) / pl.col("close")).otherwise(None)

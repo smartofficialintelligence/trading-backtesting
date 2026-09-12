@@ -8,11 +8,13 @@ from typing import Any, Final
 from qresearch.features.registry import construct
 from qresearch.strategy.contracts import Strategy
 from qresearch.strategy.examples import BuyAndHold, LaggedSignal, ScheduledRebalance
+from qresearch.strategy.rules import RuleStrategy
 
 STRATEGIES: Final[dict[str, type[Any]]] = {
     "buy_and_hold": BuyAndHold,
     "scheduled_rebalance": ScheduledRebalance,
     "lagged_signal": LaggedSignal,
+    "rule": RuleStrategy,
 }
 
 

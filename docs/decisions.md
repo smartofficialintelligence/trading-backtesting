@@ -537,3 +537,39 @@ errors" assertion would make the negative tests lie.
 The browser test's uvicorn fixture used `Popen(stdout=PIPE)` without closing it, which
 pytest surfaced as an unraisable exception at teardown — the same defect the job runner had
 (D50). Both are now closed explicitly.
+
+## D58. Stage 8: rules are a condition tree, not a language — reviewed with the user
+
+`RuleStrategy` evaluates comparisons over features combined with all/any/not, producing one
+target weight. No loops, no arithmetic, no state. Anything it cannot express is a
+`Strategy` class, and that path already works — which is the guard against this growing
+into a DSL nobody can test.
+
+Rules are *data*: serialisable, part of the `RunSpec`, hashed into the `run_id`. A rule
+change is a new run, the rule is stored with its results, and there is no sandbox question
+because nothing is executed.
+
+A comparison whose feature is missing or null evaluates to **false, not an error**.
+Warm-up leaves most features null and a rule that threw there would make the first bars of
+every run unusable. The cost is that a mistyped feature name reads as "never true" rather
+than failing loudly, so `Rule.referenced_features` exists to check against the configured
+feature set. Long takes precedence over short when a rule somehow says both — stated
+rather than emergent.
+
+`max_positions` breaks ties by `rank_by` then instrument id, so selection is deterministic
+rather than dependent on dictionary order.
+
+## D59. Cross-sectional ranks are now part of a run — **autonomous**
+
+`CrossSectionalRank` existed and was tested but the orchestrator never called it, so no
+strategy could select across instruments. `BacktestConfig`/`RunSpec` gained
+`cross_sectional`, applied after the per-instrument features, and a rank on a column no
+feature produces is refused at config time rather than silently reading as "never true".
+
+## D60. `fetch_instruments` reads the venue's own exchangeInfo — **autonomous**
+
+Tick size, step size and base/quote are facts Binance publishes; hand-writing them is
+tedious and a wrong `quantity_increment` silently changes every order size in a backtest.
+It also surfaces status: fetching the 10-name universe flagged MATICUSDT as not TRADING.
+`listed_from` defaults to before Binance existed, which is right for a fixed universe and
+wrong for a point-in-time one — stated at the call site.

@@ -26,13 +26,17 @@ from qresearch.features.technical import (
     LaggedReturn,
     MinuteOfDay,
     RelativeVolume,
+    RollingRange,
     RollingVolatility,
+    RollingZScore,
 )
 from qresearch.features.transforms import Transform, Winsorizer, ZScoreScaler
 
 FEATURES: Final[dict[str, type[Any]]] = {
     "lagged_return": LaggedReturn,
     "rolling_volatility": RollingVolatility,
+    "rolling_zscore": RollingZScore,
+    "rolling_range": RollingRange,
     "relative_volume": RelativeVolume,
     "bar_range": BarRange,
     "minute_of_day": MinuteOfDay,

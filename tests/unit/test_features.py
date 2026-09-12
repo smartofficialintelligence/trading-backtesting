@@ -326,3 +326,56 @@ def test_cyclical_encodings_wrap_at_midnight() -> None:
     assert sin[0] == pytest.approx(0.0) and cos[0] == pytest.approx(1.0)
     assert sin[1] == pytest.approx(math.sin(2 * math.pi * 1439 / 1440))
     assert abs(cos[1] - cos[0]) < 1e-4, "23:59 is next to 00:00, not far from it"
+
+
+# -- mean-reversion signal ------------------------------------------------------------------
+
+
+def test_rolling_zscore_matches_a_hand_computed_standardisation() -> None:
+    from statistics import mean, stdev
+
+    from qresearch.features.technical import RollingZScore
+
+    out = compute_features(minute_bars(8), [RollingZScore(window=4)])
+    values = out.get_column("zscore_4").to_list()
+    assert values[:3] == [None, None, None], "the window includes the current bar"
+    window = [close(i) for i in range(4)]
+    assert values[3] == pytest.approx((close(3) - mean(window)) / stdev(window))
+
+
+def test_rolling_zscore_is_null_on_a_flat_window() -> None:
+    """A window with no dispersion has no scale; an infinite z-score is not a value."""
+    from qresearch.features.technical import RollingZScore
+
+    flat = minute_bars(6).with_columns(pl.lit(100.0).alias("close"))
+    out = compute_features(flat, [RollingZScore(window=3)])
+    assert out.get_column("zscore_3").drop_nulls().is_empty()
+
+
+def test_rolling_zscore_sign_says_stretched_above_or_below() -> None:
+    from qresearch.features.technical import RollingZScore
+
+    falling = minute_bars(10).with_columns(
+        (200.0 - pl.col("bar_start").dt.minute().cast(pl.Float64) * 5).alias("close")
+    )
+    out = compute_features(falling, [RollingZScore(window=5)])
+    assert out.get_column("zscore_5").drop_nulls().max() < 0, "a falling price sits below its mean"
+
+
+def test_rolling_range_measures_high_low_span() -> None:
+    from qresearch.features.technical import RollingRange
+
+    out = compute_features(minute_bars(6), [RollingRange(window=3)])
+    values = out.get_column("range_3").to_list()
+    assert values[:2] == [None, None]
+    # minute_bars: high = 100.5 + i, low = 99.5 + i, close = 100.2 + i
+    highest, lowest = 100.5 + 2, 99.5 + 0
+    assert values[2] == pytest.approx((highest - lowest) / close(2))
+
+
+@pytest.mark.parametrize("window", [1, 0])
+def test_rolling_zscore_rejects_windows_that_cannot_form_a_deviation(window: int) -> None:
+    from qresearch.features.technical import RollingZScore
+
+    with pytest.raises(ValueError, match="window must be >= 2"):
+        RollingZScore(window=window)

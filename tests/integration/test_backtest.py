@@ -467,3 +467,79 @@ def test_metrics_carry_round_trip_statistics(
     assert stats.trade_count > 0
     assert stats.win_rate is not None and 0.0 <= stats.win_rate <= 1.0
     assert stats.long_count + stats.short_count == stats.trade_count
+
+
+# -- cross-sectional selection strategies ------------------------------------------------------
+
+
+def test_cross_sectional_ranks_reach_the_strategy(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    """A rule that selects on a cross-instrument rank must actually see one: the rank is
+    computed after the per-instrument features and its availability lifts to the batch."""
+    from qresearch.artifacts.contracts import CrossSectionalRef
+
+    cfg = config(
+        dataset_id=ingested.dataset_id,
+        features=(
+            FeatureRef(kind="rolling_volatility", params={"window": 10}),
+            FeatureRef(kind="rolling_zscore", params={"window": 10}),
+        ),
+        cross_sectional=(CrossSectionalRef(column="vol_10"),),
+        transforms=(),
+        strategy=StrategyRef(
+            kind="rule",
+            params={
+                "rule": {
+                    "long_when": {
+                        "kind": "all_of",
+                        "conditions": [
+                            {
+                                "kind": "compare",
+                                "feature": "vol_10_xrank",
+                                "op": ">=",
+                                "value": 0.5,
+                            },
+                            {"kind": "compare", "feature": "zscore_10", "op": "<", "value": -0.5},
+                        ],
+                    },
+                    "weight": 0.3,
+                },
+                "max_positions": 1,
+                "rank_by": "vol_10",
+            },
+        ),
+        cost_scenarios=("base",),
+    )
+    result = run_backtest(cfg, catalog=ingested.catalog, store=store)
+    assert result.aggregate["test"].fill_count > 0, "the rank never selected anything"
+    spec = store.load_spec(result.run_id)
+    assert [r.column for r in spec.cross_sectional] == ["vol_10"]
+
+
+def test_a_rank_on_a_column_no_feature_produces_is_refused(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    """Fail at config time, not with a silent 'never true' rule mid-run."""
+    from qresearch.artifacts.contracts import CrossSectionalRef
+
+    cfg = config(
+        dataset_id=ingested.dataset_id,
+        features=(FeatureRef(kind="lagged_return", params={"lag": 1}),),
+        cross_sectional=(CrossSectionalRef(column="vol_999"),),
+        transforms=(),
+    )
+    with pytest.raises(ValueError, match="vol_999"):
+        run_backtest(cfg, catalog=ingested.catalog, store=store)
+
+
+def test_the_rank_changes_the_run_identity(ingested: IngestedFixture) -> None:
+    from qresearch.artifacts.contracts import CrossSectionalRef
+
+    manifest = ingested.catalog.resolve(ingested.dataset_id)
+    base = config(dataset_id=ingested.dataset_id, transforms=())
+    with_rank = base.model_copy(update={"cross_sectional": (CrossSectionalRef(column="ret_1"),)})
+    assert (
+        resolve_spec(base, manifest, cost_scenario="base", code_revision=None).run_id
+        != resolve_spec(with_rank, manifest, cost_scenario="base", code_revision=None).run_id
+    )

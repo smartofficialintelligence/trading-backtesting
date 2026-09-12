@@ -1,0 +1,79 @@
+# "Find the most variable name, then bet on reversion to its mean."
+#
+#   qresearch backtest run -c configs/examples/mean_reversion_most_volatile.yaml \
+#       --root data --runs runs
+#
+# How the hypothesis maps onto features:
+#   variability -> rolling_volatility(60), ranked ACROSS instruments each minute.
+#       vol_60_xrank is a percentile: 1.0 is the most variable name at that instant.
+#       Ranking is point-in-time and batch-aware -- the rank for a minute is only usable
+#       once every member's value for that minute has published.
+#   stretch     -> rolling_zscore(30): how far price sits from its own 30-bar mean.
+#   reversion   -> go long when stretched DOWN, short when stretched UP, on the
+#       high-variability names only.
+#
+# Read the result against the bracket, not on its own: this trades often, and at 1-minute
+# frequency costs dominate. The 'free' scenario is the no-cost baseline, and the gap
+# between it and 'base' is what the strategy must clear to be real.
+
+dataset_id: ds_b15dd5b553e67cb7
+label: mean reversion on the most volatile
+experiment_id: mean-reversion-variability
+
+features:
+  - kind: rolling_volatility
+    params: { window: 60 }
+  - kind: rolling_zscore
+    params: { window: 30 }
+  - kind: rolling_range
+    params: { window: 60 }
+
+# Computed after the per-instrument features; availability lifts to the slowest member.
+cross_sectional:
+  - column: vol_60
+
+strategy:
+  kind: rule
+  params:
+    rule:
+      weight: 0.2
+      long_when:
+        kind: all_of
+        conditions:
+          - { kind: compare, feature: vol_60_xrank, op: ">=", value: 0.8 }
+          - { kind: compare, feature: zscore_30, op: "<", value: -2.0 }
+      short_when:
+        kind: all_of
+        conditions:
+          - { kind: compare, feature: vol_60_xrank, op: ">=", value: 0.8 }
+          - { kind: compare, feature: zscore_30, op: ">", value: 2.0 }
+    max_positions: 2
+    rank_by: vol_60
+
+simulation:
+  initial_cash: 100000
+  execution:
+    order_latency: PT1S
+    expire_after: PT5M
+    participation_cap: 0.05
+    liquidity_lookback_bars: 60
+  constraints:
+    # Shorting carries no borrow cost or availability constraint in this model; every run
+    # that opens one records a short_position warning.
+    allow_short: true
+    max_gross_exposure: 0.8
+    max_position_weight: 0.3
+  end_of_run: liquidate
+
+plan:
+  kind: rolling
+  train: PT24H
+  validation: PT6H
+  test: PT6H
+  purge: PT30M
+  label_horizon: PT30M
+  warmup: PT2H
+
+cost_scenarios: [base, free]
+fill_rules: [open_of_current_bar, next_open_after_eligibility]
+seed: 0
