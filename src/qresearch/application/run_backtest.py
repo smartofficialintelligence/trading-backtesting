@@ -69,6 +69,26 @@ COST_SCENARIOS: dict[str, CostConfig] = {
         commission_bps=0.5,
         slippage=SlippageConfig(kind=SlippageKind.PARTICIPATION, coefficient=10.0),
     ),
+    # Half-spread measured from signed aggTrades on 2024-03-04 (see docs/decisions.md
+    # D66): BTCUSDT 0.04 bps, SOLUSDT 0.36, DOGEUSDT 0.42. The strategy concentrates in
+    # the wider names, so 0.4 is the honest figure for it -- not the 2.5 the base scenario
+    # guesses. Commission is NOT measured: it is a published fee tier, and at retail spot
+    # rates it dominates everything else.
+    "measured_retail": CostConfig(
+        half_spread_bps=0.4,
+        commission_bps=10.0,
+        slippage=SlippageConfig(kind=SlippageKind.PARTICIPATION, coefficient=25.0),
+    ),
+    "measured_vip": CostConfig(
+        half_spread_bps=0.4,
+        commission_bps=2.0,
+        slippage=SlippageConfig(kind=SlippageKind.PARTICIPATION, coefficient=25.0),
+    ),
+    "measured_maker": CostConfig(
+        half_spread_bps=0.4,
+        commission_bps=0.0,
+        slippage=SlippageConfig(kind=SlippageKind.PARTICIPATION, coefficient=25.0),
+    ),
     "stressed": CostConfig(
         half_spread_bps=10.0,
         commission_bps=3.0,

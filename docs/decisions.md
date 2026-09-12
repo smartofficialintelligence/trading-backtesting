@@ -663,3 +663,36 @@ Sharpe −0.82 (was −0.97); cost-free +67.08% annualised at Sharpe 3.18.
 Trimming can leave a fold empty -- an equity fold whose test window falls outside trading
 sessions has no snapshots -- so stitching drops empty curves rather than asking an empty
 column for its minimum.
+
+## D66. The spread was measured; the fee is published, and it is the binding constraint — reviewed with the user
+
+Two cost inputs were wrong in opposite directions, and the net effect is worse than the
+base scenario suggested.
+
+**Spread: measured, and the assumption was 6x too pessimistic.** Binance publishes no
+historical quotes for spot (`bookTicker` exists only for futures), but `aggTrades` carries
+`isBuyerMaker`, so an effective half-spread can be recovered by comparing mean ask-side and
+bid-side prices within 5-second windows. On 2024-03-04: BTCUSDT **0.043 bps**, SOLUSDT
+0.361, DOGEUSDT 0.422 — against the 2.5 bps the base scenario assumes.
+
+**Commission: not a measurement, and it dominates.** Binance spot retail is 0.1% per side
+(10 bps), ~0.075% with BNB, falling to low single-digit bps only at high VIP tiers. The
+model assumed 1.0 bps — roughly ten times too generous. This cannot be measured from public
+data; it is a fee tier that has to be confirmed for the account that would trade.
+
+Six months, test, 3σ survivor, measured 0.4 bps half-spread:
+
+| commission | test return | annualised | Sharpe | cost drag |
+|---|---|---|---|---|
+| 10 bps (retail) | −23.16% | −71.3% | −7.50 | 36.6% |
+| 2 bps (high VIP) | +0.57% | +2.7% | 0.25 | 10.2% |
+| 0 bps (maker/rebate) | +7.55% | +41.3% | 2.17 | 3.5% |
+
+The strategy is not spread-constrained, as the base scenario implied — it is
+**fee-constrained**, and at retail rates it is not close. `measured_retail`,
+`measured_vip` and `measured_maker` are now named scenarios so this is reproducible.
+
+Caveat that stops this being a recommendation: the maker row assumes passive fills, which
+this platform cannot simulate — bar data cannot model queue position, and a limit order
+that earns the spread is also an order that does not always fill. Testing it needs the
+quote/trade execution model in ARCHITECTURE.md sec. 11, not another cost parameter.
