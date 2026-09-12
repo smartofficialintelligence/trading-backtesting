@@ -68,6 +68,10 @@ uv run python scripts/benchmark.py --instruments 5 --days 5     # baseline timin
 are deselected by default — `QRESEARCH_NETWORK_TESTS=1 uv run pytest -m network` to run
 them.
 
+The UI is tested in a **real browser** (`-m browser`, needs `--extra browser` and
+`playwright install chromium`): serving a script with HTTP 200 does not prove it parses,
+and a syntax error once shipped a fully inert launcher past a green suite.
+
 The suite includes a **differential test against `backtesting.py`** (`-m oracle`, needs
 `--extra oracle`): the same strategy on the same bars through an independent engine, which
 must produce identical fills. On a day of real BTCUSDT data it agrees exactly — 718 fills,

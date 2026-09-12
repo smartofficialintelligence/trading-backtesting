@@ -35,6 +35,11 @@ ui = [
     "fastapi>=0.115",
     "uvicorn>=0.32",
 ]
+browser = [
+    # Drives the UI in a real browser. The only way to catch a JavaScript error, which
+    # serving a file with HTTP 200 does not.
+    "playwright>=1.40",
+]
 oracle = [
     # Independent simulator used only by the differential test in
     # tests/integration/test_oracle_differential.py. Not needed to run qresearch.
@@ -89,4 +94,6 @@ markers = [
     "network: requires outbound network access to a market-data venue",
     # Differential test against an independent simulator; needs the 'oracle' extra.
     "oracle: compares results against an external backtesting library",
+    # Loads the UI in a real browser; needs the 'browser' extra and installed chromium.
+    "browser: drives the UI in a headless browser",
 ]

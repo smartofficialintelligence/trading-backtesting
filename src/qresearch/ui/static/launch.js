@@ -11,7 +11,8 @@ function control(p, value){
   if(p.type==="bool") return `<label class="count"><input type="checkbox" data-p="${p.name}" ${v?"checked":""}> ${p.name}</label>`;
   const t = (p.type==="int"||p.type==="float") ? "number" : "text";
   const step = p.type==="float" ? ' step="any"' : "";
-  const ph = p.type==="duration" ? ' placeholder="PT5M"' : (p.type==="mapping"?' placeholder=\\'{"X":0.5}\\'':"");
+  const ph = p.type==="duration" ? ' placeholder="PT5M"'
+    : (p.type==="mapping" ? " placeholder='{&quot;X&quot;:0.5}'" : "");
   return `<label class="count">${p.name}</label><input type="${t}"${step}${ph} data-p="${p.name}" value="${v}" size="10">`;
 }
 function readParams(el, spec){

@@ -509,3 +509,31 @@ Keeping JS and CSS inside `.py` strings meant fighting the line-length limit wit
 gets no syntax highlighting and no linting. They now live in `qresearch/ui/static/` and are
 served by the app; `pyproject.toml` ships them in the wheel. The archival report stays
 fully self-contained and keeps its inline styles — different artifact, different rule.
+
+## D56. The UI is tested in a real browser — reviewed with the user
+
+**A syntax error shipped in `launch.js` and every test passed.** The launcher was served,
+rendered, and completely inert: one malformed escape meant the whole script failed to
+parse, so no dropdown populated and no button did anything. The suite asserted
+`client.get("/static/launch.js").status_code == 200`, which proves a file was served, not
+that it is valid JavaScript.
+
+`tests/integration/test_ui_browser.py` now drives a real chromium against a real uvicorn
+process: pages must load with no JavaScript errors, the launcher must populate itself from
+the API, changing a component must re-render its parameters, and preview must draw a fold
+ribbon. Verified to fail on the original bug — re-introducing it fails six tests. A
+`node --check` test catches the same class faster when node is available.
+
+The extraction of JS from Python string literals (D55) is what corrupted the escape. The
+lesson is not "do not extract" — static files are still right — but that *serving is not
+working*, and only executing the page proves the difference.
+
+Page errors and failed requests are tracked separately: a 422 from submitting a
+deliberately invalid config is the behaviour under test, and folding it into a single "no
+errors" assertion would make the negative tests lie.
+
+## D57. Closed another leaked pipe, in the test fixture this time — **autonomous**
+
+The browser test's uvicorn fixture used `Popen(stdout=PIPE)` without closing it, which
+pytest surfaced as an unraisable exception at teardown — the same defect the job runner had
+(D50). Both are now closed explicitly.

@@ -16,10 +16,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: uv sync --extra dev --extra oracle --extra ui --frozen
+      - run: uv sync --extra dev --extra oracle --extra ui --extra browser --frozen
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run mypy
+      # The browser tests need a real chromium; without it they skip, and a JavaScript
+      # error would ship unnoticed again.
+      - run: uv run playwright install --with-deps chromium
       # Includes the differential test against backtesting.py (-m oracle). Live-venue
       # tests stay deselected; CI must not depend on a third party being reachable.
       - run: uv run pytest --cov=qresearch --cov-report=term-missing
