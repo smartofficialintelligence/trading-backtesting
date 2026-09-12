@@ -609,3 +609,35 @@ multiple comparisons a reporting requirement rather than a footnote.
 `linked` grid keys apply several paths together, for parameters that must move in step: a
 symmetric entry threshold varied independently would generate long −2 / short +3 pairs
 nobody intended to test.
+
+## D64. Result: the signal is real and does not clear costs — reviewed with the user
+
+Six months of 5-minute Binance bars (10 instruments, 524,160 rows, Jan-Jun 2024),
+11 walk-forward folds. Strategy: long the most-volatile names when stretched below -3σ of
+their 6-hour mean, short when above; at most two positions.
+
+| | validation | test | trades | cost drag |
+|---|---|---|---|---|
+| 3σ, no costs | +9.50% | **+11.43%** (Sharpe 2.75) | 866 | — |
+| 3σ, base costs | −3.60% | −3.10% | 866 | 13.9% |
+| 2σ, no costs | +24.59% | −3.31% | 2,644 | — |
+| 2σ, base costs | −24.00% | −41.11% | 2,662 | 48.5% |
+
+The 3σ signal is **persistent out of sample**: positive in 9 of 11 test folds, 66.9% win
+rate, profit factor 1.32, across a rally and a drawdown. This is not the five-day result
+repeated — it survived a twenty-fold increase in sample.
+
+It also does not clear costs, and the margin is specific: **$12.64 gross per trade against
+$16.05 of modelled friction**. At the assumed 2.5 bps half-spread that leaves roughly
+2 bps of affordable round-trip friction, about half what the model charges.
+
+The 2σ variant is the counter-example that makes the point: it had the best validation
+return in the five-day sweep and posts −3.31% gross on test over six months. More trading
+bought noise, not edge.
+
+What this does *not* establish, and the report says so on every run: the optimistic fill
+rule is in use (the conservative twin would be worse); shorts carry no borrow cost and the
+strategy opens thousands of them; the universe is ten names chosen today, so survivorship
+is unmodelled; and the 2.5 bps half-spread is a flat assumption applied to both BTC and
+DOGE, when the strategy concentrates in the wider-spread names. Settling whether ~2 bps is
+achievable needs quote data, which this platform does not yet ingest.
