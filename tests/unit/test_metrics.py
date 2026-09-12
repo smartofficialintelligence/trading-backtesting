@@ -141,3 +141,40 @@ def test_metrics_are_serialisable() -> None:
         {"equity_curve": curve([(0, 0, 100.0), (1, 0, 101.0)])}, bar_size="1m", annualization=POLICY
     )
     assert Metrics.model_validate_json(m.model_dump_json()) == m
+
+
+def test_annualisation_uses_the_decision_range_not_the_whole_curve() -> None:
+    """Regression: a walk-forward fold's equity curve covers warm-up, training and purge
+    as well as the evaluated period. Annualising over all of it divides by too many
+    periods and understates every rate -- return, volatility, Sharpe, turnover -- by the
+    ratio of span to decision time. Found when a hand calculation disagreed with the
+    reported figure by exactly 176/77."""
+    from qresearch.research.splits import TimeRange
+
+    # 200 flat minutes (warm-up), then 100 minutes of genuine movement. The live segment
+    # oscillates rather than ramping: a straight ramp has near-zero *return* volatility,
+    # so flat periods would add dispersion instead of diluting it.
+    flat = [(i, 0, 100.0) for i in range(200)]
+    live = [(200 + i, 0, 100.0 + i * 0.05 + (1.5 if i % 2 else -1.5)) for i in range(100)]
+    frames = {"equity_curve": curve(flat + live)}
+    decision = TimeRange(start=T0 + dt.timedelta(minutes=200), end=T0 + dt.timedelta(minutes=300))
+
+    whole = compute_metrics(frames, bar_size="1m", annualization=POLICY)
+    scoped = compute_metrics(frames, bar_size="1m", annualization=POLICY, decision_range=decision)
+
+    assert scoped.periods == 99, "only the decision window is scored"
+    assert whole.periods == 299
+
+    # The rates are what the extra periods corrupt: annualising divides by a period
+    # count three times too large, and the flat stretch dilutes the return dispersion.
+    assert scoped.annualized_return > whole.annualized_return * 2.5, (
+        f"annualising over 299 periods instead of 99 understated the rate: "
+        f"{whole.annualized_return:.4f} vs {scoped.annualized_return:.4f}"
+    )
+    assert scoped.annualized_volatility > whole.annualized_volatility, "flat periods dilute vol"
+
+
+def test_the_decision_range_is_optional() -> None:
+    """A simulation whose span is its decision range needs no trimming."""
+    frames = {"equity_curve": curve([(0, 0, 100.0), (1, 0, 101.0), (2, 0, 102.0)])}
+    assert compute_metrics(frames, bar_size="1m", annualization=POLICY).periods == 2

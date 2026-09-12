@@ -307,7 +307,12 @@ def _execute(
             frames = _tag(frames, fold.index, role)
             for name, frame in frames.items():
                 ledgers.setdefault(name, []).append(frame)
-            metrics = compute_metrics(frames, bar_size=spec.bar_size, annualization=annualization)
+            metrics = compute_metrics(
+                frames,
+                bar_size=spec.bar_size,
+                annualization=annualization,
+                decision_range=decision_range,
+            )
             fold_metrics.append(
                 FoldMetrics(
                     fold=fold.index,
@@ -317,7 +322,12 @@ def _execute(
                     metrics=metrics,
                 )
             )
-            role_curves.setdefault(role, []).append(frames["equity_curve"])
+            # Stitch only the decision portion: each fold's curve also covers warm-up,
+            # training and purge, and including those flat stretches in the aggregate
+            # divides every annualised rate by too many periods.
+            role_curves.setdefault(role, []).append(
+                frames["equity_curve"].filter(decision_range.predicate("at"))
+            )
             role_fills.setdefault(role, []).append(frames["fills"])
             for w in result.warnings:
                 key = (w.code, w.instrument_id)
@@ -508,7 +518,13 @@ def _stitch(curves: list[pl.DataFrame]) -> pl.DataFrame:
     """Chain fold curves so each fold starts where the previous ended."""
     parts = []
     scale = 1.0
-    for curve in sorted(curves, key=lambda c: as_utc_scalar(c.get_column("at").min())):
+    # Trimming to the decision range can leave a fold empty -- an equity fold whose test
+    # window lands outside trading sessions has no snapshots at all -- so drop those
+    # before sorting rather than asking an empty column for its minimum.
+    populated = [c for c in curves if not c.is_empty()]
+    if not populated:
+        return curves[0]
+    for curve in sorted(populated, key=lambda c: as_utc_scalar(c.get_column("at").min())):
         if curve.is_empty():
             continue
         start = float(curve.item(0, "equity"))
@@ -524,7 +540,7 @@ def _stitch(curves: list[pl.DataFrame]) -> pl.DataFrame:
         scale = float(parts[-1].item(parts[-1].height - 1, "equity"))
     if not parts:
         return curves[0]
-    first_start = float(curves[0].item(0, "equity")) if curves and not curves[0].is_empty() else 1.0
+    first_start = float(populated[0].item(0, "equity"))
     stitched = pl.concat(parts)
     return stitched.with_columns(
         *[

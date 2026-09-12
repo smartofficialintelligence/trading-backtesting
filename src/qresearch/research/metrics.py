@@ -31,6 +31,7 @@ import polars as pl
 from pydantic import Field
 
 from qresearch.config import FrozenModel
+from qresearch.research.splits import TimeRange
 from qresearch.research.trades import TradeStats, build_trades, trade_stats
 from qresearch.time import parse_duration
 
@@ -123,9 +124,23 @@ def compute_metrics(
     *,
     bar_size: str,
     annualization: AnnualizationPolicy,
+    decision_range: TimeRange | None = None,
 ) -> Metrics:
-    """Score one simulation from its ledgers (see ``SimulationResult.frames``)."""
-    curve = periodic_equity(frames["equity_curve"], bar_size)
+    """Score one simulation from its ledgers (see ``SimulationResult.frames``).
+
+    Args:
+        decision_range: restrict the equity curve to the period the strategy was actually
+            deciding in. **Supply this whenever the simulation spans more than its
+            decision range**, which a walk-forward fold always does: its curve covers
+            warm-up, training and purge as well, and those are flat, untraded periods.
+            Annualising over them divides by too many periods and understates every rate
+            -- return, volatility, Sharpe and turnover alike -- by the ratio of span to
+            decision time.
+    """
+    equity_curve = frames["equity_curve"]
+    if decision_range is not None and not equity_curve.is_empty():
+        equity_curve = equity_curve.filter(decision_range.predicate("at"))
+    curve = periodic_equity(equity_curve, bar_size)
     fills = frames.get("fills", pl.DataFrame())
     orders = frames.get("orders", pl.DataFrame())
     warnings = frames.get("warnings", pl.DataFrame())

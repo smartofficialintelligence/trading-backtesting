@@ -641,3 +641,25 @@ strategy opens thousands of them; the universe is ten names chosen today, so sur
 is unmodelled; and the 2.5 bps half-spread is a flat assumption applied to both BTC and
 DOGE, when the strategy concentrates in the wider-spread names. Settling whether ~2 bps is
 achievable needs quote data, which this platform does not yet ingest.
+
+## D65. Metrics annualise over the decision range, not the whole simulation — **autonomous**
+
+**Every annualised number reported before this was understated.** A walk-forward fold's
+equity curve covers warm-up, training and purge as well as the evaluated window, and
+`compute_metrics` annualised over all of it. On the six-month study that was 176 days of
+curve for 77 days of trading, so every rate was divided by 2.3x too many periods:
+annualised return, volatility, Sharpe and turnover alike.
+
+Found because a hand calculation of the annualised return disagreed with the reported
+figure, and the ratio between them was exactly the ratio of span to decision time. Worth
+noting the failure mode: the number was not absurd, just wrong, and nothing in the suite
+compared it against an independent calculation.
+
+`compute_metrics` now takes an optional `decision_range` and the orchestrator supplies it,
+both per fold and when stitching the per-role aggregate. Corrected figures for the 3σ
+survivor on test: annualised return −13.80% (was −6.34%), turnover 1,619x/year (was 707x),
+Sharpe −0.82 (was −0.97); cost-free +67.08% annualised at Sharpe 3.18.
+
+Trimming can leave a fold empty -- an equity fold whose test window falls outside trading
+sessions has no snapshots -- so stitching drops empty curves rather than asking an empty
+column for its minimum.
