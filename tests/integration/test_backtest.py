@@ -543,3 +543,89 @@ def test_the_rank_changes_the_run_identity(ingested: IngestedFixture) -> None:
         resolve_spec(base, manifest, cost_scenario="base", code_revision=None).run_id
         != resolve_spec(with_rank, manifest, cost_scenario="base", code_revision=None).run_id
     )
+
+
+def test_a_strategy_reading_a_feature_the_run_does_not_produce_is_refused(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    """Regression: a rule referencing a missing column is false everywhere, so the run
+    completes with zero trades and no error -- indistinguishable from a strategy that
+    found nothing. Caught in a real sweep where varying the z-score window renamed the
+    feature out from under the rule."""
+    cfg = config(
+        dataset_id=ingested.dataset_id,
+        features=(FeatureRef(kind="rolling_zscore", params={"window": 10}),),
+        transforms=(),
+        strategy=StrategyRef(
+            kind="rule",
+            params={
+                "rule": {
+                    "long_when": {
+                        "kind": "compare",
+                        "feature": "zscore_30",
+                        "op": "<",
+                        "value": -1.0,
+                    },
+                    "weight": 0.3,
+                }
+            },
+        ),
+    )
+    with pytest.raises(ValueError, match=r"reads \['zscore_30'\]"):
+        run_backtest(cfg, catalog=ingested.catalog, store=store)
+
+
+def test_the_rank_by_column_is_checked_too(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    cfg = config(
+        dataset_id=ingested.dataset_id,
+        features=(FeatureRef(kind="rolling_zscore", params={"window": 10}),),
+        transforms=(),
+        strategy=StrategyRef(
+            kind="rule",
+            params={
+                "rule": {
+                    "long_when": {
+                        "kind": "compare",
+                        "feature": "zscore_10",
+                        "op": "<",
+                        "value": -1.0,
+                    },
+                    "weight": 0.3,
+                },
+                "max_positions": 1,
+                "rank_by": "vol_999",
+            },
+        ),
+    )
+    with pytest.raises(ValueError, match="vol_999"):
+        run_backtest(cfg, catalog=ingested.catalog, store=store)
+
+
+def test_a_correctly_referenced_rule_still_runs(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    """The guard must not reject a valid configuration."""
+    cfg = config(
+        dataset_id=ingested.dataset_id,
+        features=(FeatureRef(kind="rolling_zscore", params={"window": 10}),),
+        transforms=(),
+        strategy=StrategyRef(
+            kind="rule",
+            params={
+                "rule": {
+                    "long_when": {
+                        "kind": "compare",
+                        "feature": "zscore_10",
+                        "op": "<",
+                        "value": -0.5,
+                    },
+                    "weight": 0.3,
+                }
+            },
+        ),
+        cost_scenarios=("base",),
+    )
+    result = run_backtest(cfg, catalog=ingested.catalog, store=store)
+    assert result.aggregate["test"].fill_count > 0

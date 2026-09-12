@@ -198,6 +198,20 @@ class RuleStrategy:
         self.rank_by = rank_by
         self.rank_ascending = rank_ascending
 
+    @property
+    def required_features(self) -> set[str]:
+        """Feature columns this strategy reads.
+
+        The orchestrator checks these against the computed feature set. Without it, a
+        renamed or mistyped feature makes every comparison false (see the module
+        docstring) and the run completes with zero trades and no error -- which looks
+        exactly like a strategy that found no opportunities.
+        """
+        needed = set(self.rule.referenced_features)
+        if self.rank_by:
+            needed.add(self.rank_by)
+        return needed
+
     def reset(self) -> None:
         return None
 

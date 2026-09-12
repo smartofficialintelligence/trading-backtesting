@@ -573,3 +573,39 @@ tedious and a wrong `quantity_increment` silently changes every order size in a 
 It also surfaces status: fetching the 10-name universe flagged MATICUSDT as not TRADING.
 `listed_from` defaults to before Binance existed, which is right for a fixed universe and
 wrong for a point-in-time one — stated at the call site.
+
+## D61. A strategy reading a feature the run does not produce is refused — **autonomous**
+
+D58 chose to make a missing feature evaluate to **false** rather than raise, so warm-up
+would not make the first bars of every run unusable, and noted the cost: a mistyped name
+reads as "never true". That cost arrived immediately. A parameter sweep varied the z-score
+window, which renamed the feature from `zscore_30` to `zscore_72`, while the rule kept
+referencing the old name. **All six trials completed successfully with zero trades** —
+indistinguishable from a strategy that found no opportunities.
+
+Strategies may now advertise `required_features`, and the orchestrator checks them against
+the features the run will produce (including `_xrank` columns) *before* loading any data.
+`RuleStrategy` reports its rule's references plus `rank_by`. The launcher had this check;
+runs did not, which is the gap that mattered.
+
+The general lesson: a design that trades loudness for convenience needs the loudness put
+back somewhere specific, and "somewhere" must include every entry point, not the one being
+worked on at the time.
+
+## D62. `derive_dataset` makes coarser bars a first-class dataset — **autonomous**
+
+`resample_bars` existed but had no path to a stored dataset, so testing a strategy at 5m
+meant hand-rolling the pipeline. `qresearch data resample <id> --to 5m` writes a real
+dataset with its own id whose source records the parent id and parent content digest, so
+lineage is explicit and re-deriving resolves to the same id.
+
+## D63. Sweeps compare on validation and print the trial count — **autonomous**
+
+`scripts/sweep.py` expands a grid, runs each point under one `experiment_id`, and sorts by
+**validation** return with test shown beside it. It prints "best of N trials" with the
+winner, because the maximum of many draws is biased upward and the leakage checklist makes
+multiple comparisons a reporting requirement rather than a footnote.
+
+`linked` grid keys apply several paths together, for parameters that must move in step: a
+symmetric entry threshold varied independently would generate long −2 / short +3 pairs
+nobody intended to test.

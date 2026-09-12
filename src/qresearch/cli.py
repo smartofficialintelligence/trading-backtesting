@@ -18,7 +18,7 @@ import typer
 
 from qresearch import __version__
 from qresearch.application.config import load_backtest_config, load_ingest_config
-from qresearch.application.ingest import DataQualityError, ingest_bars
+from qresearch.application.ingest import DataQualityError, derive_dataset, ingest_bars
 from qresearch.application.run_backtest import (
     COST_SCENARIOS,
     execute,
@@ -276,6 +276,34 @@ def data_ingest(
     manifest = outcome.manifest
     verb = "reused" if outcome.reused_existing else "wrote"
     typer.echo(f"{verb} {manifest.dataset_id}  rows={manifest.row_count}")
+    _print_findings(outcome.report.findings)
+
+
+@data_app.command("resample")
+def data_resample(
+    dataset: Annotated[str, typer.Argument(help="Source dataset id.")],
+    to: Annotated[str, typer.Option("--to", help="Target bar size, e.g. 5m.")],
+    root: RootOption = Path("data"),
+) -> None:
+    """Derive a coarser dataset from an existing one.
+
+    The result is a first-class dataset with its own id, recording the parent as its
+    source. A coarse bar never publishes before its window closes or before its slowest
+    input did, whichever is later.
+    """
+    _resolve(root, dataset)
+    try:
+        outcome = derive_dataset(
+            dataset,
+            catalog=DatasetCatalog(root),
+            target_bar_size=to,
+            created_by=f"qresearch-cli/{__version__}",
+        )
+    except (DataQualityError, ValueError) as error:
+        typer.secho(f"FAILED: {error}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from error
+    verb = "reused" if outcome.reused_existing else "wrote"
+    typer.echo(f"{verb} {outcome.manifest.dataset_id}  rows={outcome.manifest.row_count}  ({to})")
     _print_findings(outcome.report.findings)
 
 

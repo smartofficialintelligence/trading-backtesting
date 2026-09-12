@@ -250,6 +250,8 @@ def _execute(
     instruments = {i: manifest.instrument(i) for i in spec.instrument_ids}
     annualization = annualization_for(spec.calendar_id, spec.bar_size)
 
+    _check_strategy_features(spec, features_columns := _feature_columns(spec))
+    del features_columns
     bars = _load_bars(catalog, spec)
     bars = attach_sessions(bars, calendar)
     features_all = _compute_features(bars, spec) if spec.features else None
@@ -413,6 +415,33 @@ def _limitations(spec: RunSpec) -> list[WarningRecord]:
             )
         )
     return records
+
+
+def _feature_columns(spec: RunSpec) -> set[str]:
+    """Names the configured features and ranks will produce, without computing them."""
+    names = {build_feature(f.kind, f.params).spec.name for f in spec.features}
+    return names | {f"{r.column}_xrank" for r in spec.cross_sectional}
+
+
+def _check_strategy_features(spec: RunSpec, available: set[str]) -> None:
+    """Refuse a strategy that reads a feature the run does not produce.
+
+    A rule whose comparisons reference a missing column evaluates to false everywhere, so
+    the run succeeds with zero trades and no error. That is indistinguishable from a
+    strategy that simply found nothing, and it is the failure this check exists to
+    prevent.
+    """
+    strategy = build_strategy(spec.strategy.kind, spec.strategy.params)
+    required = getattr(strategy, "required_features", None)
+    if not required:
+        return
+    missing = sorted(set(required) - available)
+    if missing:
+        raise ValueError(
+            f"the strategy reads {missing}, which this run does not produce. "
+            f"Available: {sorted(available)}. A rule referencing a missing feature is "
+            "silently false everywhere, so this is refused rather than run."
+        )
 
 
 def _load_bars(catalog: DatasetCatalog, spec: RunSpec) -> pl.DataFrame:

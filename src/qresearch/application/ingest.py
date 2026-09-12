@@ -23,12 +23,14 @@ from qresearch.data.manifests import (
     SCHEMA_VERSION,
     DatasetIdentity,
     DatasetManifest,
+    SourceRef,
     ValidationFinding,
     ValidationReport,
     ValidationSeverity,
 )
+from qresearch.data.point_in_time import UnfilteredScan
 from qresearch.data.validation import validate_bars
-from qresearch.ids import InstrumentId
+from qresearch.ids import DatasetId, InstrumentId
 from qresearch.logging import get_logger
 from qresearch.time import as_utc_scalar, now_utc, parse_duration
 
@@ -245,3 +247,77 @@ def resample_bars(frame: pl.DataFrame, *, target_bar_size: str) -> pl.DataFrame:
         )
         .sort(["instrument_id", "bar_start"])
     )
+
+
+def derive_dataset(
+    source_dataset: str,
+    *,
+    catalog: DatasetCatalog,
+    target_bar_size: str,
+    created_by: str,
+    normalization_version: str | None = None,
+) -> IngestOutcome:
+    """Write a coarser dataset derived from an existing one.
+
+    The derived dataset is a first-class dataset with its own id and manifest, and it
+    records the parent as its source — parent id plus parent content digest — so lineage
+    is explicit and re-deriving from the same parent resolves to the same id.
+
+    Availability is handled by :func:`resample_bars`: a coarse bar is never visible before
+    its window closes or before its slowest input published, whichever is later.
+    """
+    parent = catalog.resolve(DatasetId(source_dataset))
+    bars = catalog.scan_all_unfiltered(
+        UnfilteredScan(
+            dataset_id=DatasetId(source_dataset),
+            reason=f"deriving {target_bar_size} bars from {source_dataset}",
+        )
+    ).collect()
+    frame = resample_bars(bars, target_bar_size=target_bar_size)
+
+    report = validate_bars(
+        frame,
+        policy=parent.identity.policy,
+        expect_complete_grid=False,
+        calendar=get_calendar(parent.identity.calendar_id),
+    )
+    if not report.ok:
+        raise DataQualityError(report)
+
+    identity = DatasetIdentity(
+        schema_version=SCHEMA_VERSION,
+        asset_class=parent.identity.asset_class,
+        venue=parent.identity.venue,
+        bar_size=target_bar_size,
+        calendar_id=parent.identity.calendar_id,
+        instrument_ids=parent.identity.instrument_ids,
+        range_start=as_utc_scalar(frame.get_column("bar_start").min()),
+        range_end=as_utc_scalar(frame.get_column("bar_end").max()),
+        policy=parent.identity.policy,
+        normalization_version=normalization_version
+        or f"{parent.identity.normalization_version}+resample:{target_bar_size}",
+        sources=(
+            SourceRef(
+                provider=f"derived:{parent.dataset_id}",
+                feed=parent.identity.bar_size,
+                uri=f"qresearch://dataset/{parent.dataset_id}",
+                content_sha256=parent.content_digest,
+            ),
+        ),
+    )
+    existed = identity.dataset_id in catalog.list_datasets()
+    manifest = catalog.write_dataset(
+        identity,
+        frame,
+        validation=report,
+        created_by=created_by,
+        created_at=now_utc(),
+        instruments=parent.instruments,
+    )
+    log.info(
+        "derived %s from %s",
+        manifest.dataset_id,
+        parent.dataset_id,
+        extra={"fields": {"rows": manifest.row_count, "bar_size": target_bar_size}},
+    )
+    return IngestOutcome(manifest=manifest, report=report, reused_existing=existed)
