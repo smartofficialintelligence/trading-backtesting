@@ -1,0 +1,86 @@
+# Mean reversion on the most volatile name -- six-month evaluation.
+#
+# This is the configuration behind the result in docs/decisions.md D64: over 6 months of
+# 5-minute Binance bars (10 instruments, 11 walk-forward folds, Jan-Jun 2024) the signal
+# earns +11.4% gross with a Sharpe of 2.75 and is positive in 9 of 11 out-of-sample test
+# folds -- and loses 3.1% after costs.
+#
+#   qresearch data resample <1m-dataset> --to 5m --root data     # or ingest 5m directly
+#   qresearch backtest run -c configs/examples/mean_reversion_6m_3sigma.yaml \
+#       --root data --runs runs
+#
+# Read the 'free' scenario next to 'base': the gap between them (13.9% of equity) is the
+# entire question. Gross P&L is $12.64 per trade against $16.05 of modelled friction.
+#
+# dataset_id below is a 6-month 5m Binance pull; replace it with your own.
+
+cost_scenarios:
+- base
+- free
+cross_sectional:
+- column: vol_12
+dataset_id: ds_1cbb11366c98ed99
+experiment_id: mr-six-month
+features:
+- kind: rolling_volatility
+  params:
+    window: 12
+- kind: rolling_zscore
+  params:
+    window: 72
+- kind: rolling_range
+  params:
+    window: 12
+fill_rules:
+- open_of_current_bar
+label: 6m survivor thr=3.0
+plan:
+  kind: rolling
+  label_horizon: PT1H
+  purge: PT1H
+  test: P7D
+  train: P21D
+  validation: P7D
+  warmup: PT12H
+seed: 0
+simulation:
+  constraints:
+    allow_short: true
+    max_gross_exposure: 0.8
+    max_position_weight: 0.3
+  end_of_run: liquidate
+  execution:
+    expire_after: PT5M
+    liquidity_lookback_bars: 60
+    order_latency: PT1S
+    participation_cap: 0.05
+  initial_cash: 100000
+strategy:
+  kind: rule
+  params:
+    max_positions: 2
+    rank_by: vol_12
+    rule:
+      long_when:
+        conditions:
+        - feature: vol_12_xrank
+          kind: compare
+          op: '>='
+          value: 0.8
+        - feature: zscore_72
+          kind: compare
+          op: <
+          value: -3.0
+        kind: all_of
+      short_when:
+        conditions:
+        - feature: vol_12_xrank
+          kind: compare
+          op: '>='
+          value: 0.8
+        - feature: zscore_72
+          kind: compare
+          op: '>'
+          value: 3.0
+        kind: all_of
+      weight: 0.2
