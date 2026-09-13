@@ -1,0 +1,36 @@
+# Sealed test windows (docs/decisions.md D70). Enforced by the backtest orchestrator: a
+# run with a fold inside a window or its gap is refused unless the config sets
+# `exclude_sealed: true` (development) or names the window under `unseal` (the one-time
+# evaluation). Ranges are half-open [start, end) in UTC and cover whole days.
+#
+# Chosen on market prices only, before any strategy was run on them: the most recent
+# non-overlapping window of each kind in Jul 2024 - Aug 2026, measured on BTCUSDT and on
+# an equal-weight basket of nine Binance spot coins (BTC ETH SOL BNB XRP ADA DOGE AVAX
+# LINK), daily closes.
+#   bull: 90 days, BTC and basket both up more than 20%
+#   bear: 90 days, BTC and basket both down more than 20%
+#   flat: 60 days (no 90-day window qualifies), BTC and basket both within +/-5% net and
+#         never more than 10% from the start
+#
+# Do not edit a window after anything has been evaluated in it. Retire it instead, with
+# a note, and treat its period as development data from then on.
+
+windows:
+- name: bull-2025
+  range:
+    start: "2025-05-05T00:00:00Z"
+    end: "2025-08-04T00:00:00Z"
+  gap: P7D
+  note: "basket +26.8%, BTC +20.6% (2025-05-05 to 2025-08-03 closes)"
+- name: bear-2026
+  range:
+    start: "2026-01-19T00:00:00Z"
+    end: "2026-04-20T00:00:00Z"
+  gap: P7D
+  note: "basket -30.2%, BTC -20.3% (2026-01-19 to 2026-04-19 closes)"
+- name: flat-2026
+  range:
+    start: "2026-06-19T00:00:00Z"
+    end: "2026-08-19T00:00:00Z"
+  gap: P7D
+  note: "basket +4.0%, BTC +1.9%, basket range -6%/+6%, BTC range -8%/+5% (2026-06-19 to 2026-08-18 closes)"

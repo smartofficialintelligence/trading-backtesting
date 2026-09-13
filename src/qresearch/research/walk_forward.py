@@ -14,6 +14,7 @@ Ranges are periods of *knowledge*: rows are assigned by ``available_at`` (see
 from __future__ import annotations
 
 import datetime as _dt
+from collections.abc import Sequence
 from enum import StrEnum
 from typing import Self
 
@@ -136,12 +137,20 @@ class Fold(FrozenModel):
         return expr
 
 
-def generate_folds(plan: WalkForwardPlan, span: TimeRange) -> list[Fold]:
-    """All folds whose test range ends inside ``span``. Raises if there are none."""
+def generate_folds(
+    plan: WalkForwardPlan, span: TimeRange, exclude: Sequence[TimeRange] = ()
+) -> list[Fold]:
+    """All folds whose test range ends inside ``span``, minus any that touch ``exclude``.
+
+    A fold touches an excluded range if any part of its span -- warm-up through test --
+    overlaps it. Such folds are skipped, not shortened, and the rest are numbered from 0.
+    Raises if no fold remains.
+    """
     purge = plan.effective_purge
     first_train_start = span.start + plan.warmup
     folds: list[Fold] = []
     embargoes: list[TimeRange] = []
+    skipped = 0
     k = 0
     while True:
         train_end = first_train_start + plan.train + k * plan.effective_step
@@ -164,8 +173,13 @@ def generate_folds(plan: WalkForwardPlan, span: TimeRange) -> list[Fold]:
             else None
         )
         train = TimeRange(start=train_start, end=train_end)
+        reach = TimeRange(start=warmup.start if warmup else train_start, end=test.end)
+        if any(reach.overlaps(excluded) for excluded in exclude):
+            skipped += 1
+            k += 1
+            continue
         fold = Fold(
-            index=k,
+            index=len(folds),
             warmup=warmup,
             train=train,
             purge_after_train=purge1,
@@ -179,6 +193,8 @@ def generate_folds(plan: WalkForwardPlan, span: TimeRange) -> list[Fold]:
         if fold.embargo is not None:
             embargoes.append(fold.embargo)
         k += 1
+    if not folds and skipped:
+        raise ValueError(f"all {skipped} fold(s) touch an excluded range; none remain")
     if not folds:
         needed = plan.warmup + plan.train + purge + plan.validation + plan.test
         if plan.validation > _ZERO:

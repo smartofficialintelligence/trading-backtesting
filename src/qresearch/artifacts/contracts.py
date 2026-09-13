@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import datetime as _dt
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from qresearch.config import FrozenModel
 from qresearch.ids import DatasetId, RunId, content_hash
@@ -40,17 +40,30 @@ class FeatureRef(FrozenModel):
 
 
 class CrossSectionalRef(FrozenModel):
-    """A rank computed across instruments at each instant.
+    """A rank or mean computed across instruments at each instant.
 
     Separate from ``FeatureRef`` because the timing is different in kind: a per-instrument
-    feature is usable when its own inputs are in, a rank only when every member's value is
-    (ARCHITECTURE.md sec. 9, cross-sectional asynchrony).
+    feature is usable when its own inputs are in, a cross-sectional value only when every
+    member's is (ARCHITECTURE.md sec. 9, cross-sectional asynchrony).
     """
 
     column: str = Field(min_length=1)
     min_members: int = Field(default=2, ge=2)
     pct: bool = True
     descending: bool = False
+    statistic: Literal["rank", "mean"] = "rank"
+    """``rank`` produces ``{column}_xrank``; ``mean`` produces ``{column}_xmean``, the
+    equal-weight average across instruments."""
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if self.statistic == "mean" and (not self.pct or self.descending):
+            raise ValueError("pct and descending apply to ranks, not to a cross-sectional mean")
+        return self
+
+    @property
+    def name(self) -> str:
+        return f"{self.column}_x{self.statistic}"
 
 
 class TransformRef(FrozenModel):
@@ -92,10 +105,25 @@ class RunSpec(FrozenModel):
     experiment_id: str | None = None
     label: str | None = None
 
+    excluded: tuple[TimeRange, ...] = ()
+    """Ranges no fold may touch; folds that would are skipped. Resolved from the sealed
+    test windows when a config sets ``exclude_sealed`` (``qresearch.research.holdout``)."""
+
+    unsealed: tuple[str, ...] = ()
+    """Sealed windows this run was allowed to evaluate. Non-empty means it spent a holdout."""
+
     def identity(self) -> dict[str, Any]:
         """Everything that makes this an exact run, code revision included."""
         data = self.canonical_dict()
         data.pop("label", None)
+        # Added after runs had been recorded: left out of the hash while unused, so every
+        # earlier run id still resolves to the same run.
+        for key in ("excluded", "unsealed"):
+            if not data.get(key):
+                data.pop(key, None)
+        for ref in data.get("cross_sectional", ()):
+            if ref.get("statistic") == "rank":
+                ref.pop("statistic")
         return data
 
     def config_identity(self) -> dict[str, Any]:

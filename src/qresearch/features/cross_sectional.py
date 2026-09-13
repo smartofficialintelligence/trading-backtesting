@@ -67,20 +67,51 @@ class CrossSectionalRank:
         return pl.when(members >= self.min_members).then(value).otherwise(None)
 
 
+@dataclass(frozen=True, slots=True)
+class CrossSectionalMean:
+    """Equal-weight mean of ``column`` across the instruments present at each ``bar_start``.
+
+    Every instrument's row carries the same value: a market-level reading. Over trailing
+    log returns it is the return of an equal-weight basket rebalanced each bar -- the
+    basket trend of D70. Membership follows the same missing-member policy as ranks.
+    """
+
+    column: str
+    min_members: int = 2
+
+    def __post_init__(self) -> None:
+        if self.min_members < 2:
+            raise ValueError(
+                "min_members must be >= 2 (a basket of one is not a basket), "
+                f"got {self.min_members}"
+            )
+
+    @property
+    def name(self) -> str:
+        return f"{self.column}_xmean"
+
+    def expression(self) -> pl.Expr:
+        members = pl.col(self.column).count().over(BAR)
+        return pl.when(members >= self.min_members).then(pl.col(self.column).mean().over(BAR))
+
+
+CrossSectionalFeature = CrossSectionalRank | CrossSectionalMean
+
 _REQUIRED: Final = (*FEATURE_KEY, "available_at")
 
 
 def compute_cross_sectional(
     frame: pl.DataFrame,
-    ranks: Sequence[CrossSectionalRank],
+    ranks: Sequence[CrossSectionalFeature],
 ) -> pl.DataFrame:
-    """Add cross-sectional ranks to a feature frame and lift its availability to batch time.
+    """Add cross-sectional features to a feature frame and lift its availability to batch time.
 
     Args:
         frame: output of :func:`~qresearch.features.pipeline.compute_features`, or any
-            frame with ``instrument_id``, ``bar_start``, ``available_at`` and the ranked
+            frame with ``instrument_id``, ``bar_start``, ``available_at`` and the input
             columns.
-        ranks: the ranks to compute. Output names must not collide with existing columns.
+        ranks: the ranks and means to compute. Output names must not collide with existing
+            columns.
     """
     if not ranks:
         raise ValueError("no cross-sectional features requested")

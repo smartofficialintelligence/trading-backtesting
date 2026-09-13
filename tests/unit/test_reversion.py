@@ -176,3 +176,42 @@ def test_the_ui_can_render_a_form_for_it() -> None:
     assert by_name["sides"].choices == ("long", "short", "both")
     assert by_name["rank_feature"].optional
     assert all(p.type != "unsupported" for p in spec.params)
+
+
+# -- trend gate -----------------------------------------------------------------------------
+
+
+def trend_rows(*items: tuple[str, float, float | None]) -> list[dict[str, object]]:
+    """``(instrument, zscore, trend)``."""
+    return [{"instrument_id": i, "z": z, "trend": t} for i, z, t in items]
+
+
+def test_a_long_entry_needs_the_trend_above_min_trend() -> None:
+    strategy = ZScoreReversion(zscore="z", sides="long", trend_feature="trend", min_trend=0.01)
+    context = _Context(trend_rows(("A", -4.0, 0.05), ("B", -4.0, 0.01), ("C", -4.0, -0.2)))
+    assert targets(strategy, context) == {"A": 0.2}, "strictly above; B sits exactly on it"
+
+
+def test_a_short_entry_needs_the_trend_below_minus_min_trend() -> None:
+    strategy = ZScoreReversion(zscore="z", sides="short", trend_feature="trend")
+    context = _Context(trend_rows(("A", 4.0, -0.05), ("B", 4.0, 0.05)))
+    assert targets(strategy, context) == {"A": -0.2}
+
+
+def test_an_unknown_trend_blocks_the_entry() -> None:
+    strategy = ZScoreReversion(zscore="z", trend_feature="trend")
+    assert strategy.on_decision(_Context(trend_rows(("A", -4.0, None)))) == []
+
+
+def test_the_trend_gates_entries_only_and_never_forces_or_blocks_an_exit() -> None:
+    strategy = ZScoreReversion(zscore="z", trend_feature="trend")
+    held_down = _Context(trend_rows(("A", -1.0, -0.3)), positions={"A": 5.0})
+    assert strategy.on_decision(held_down) == [], "a falling trend does not close a position"
+    at_mean = _Context(trend_rows(("A", 0.2, -0.3)), positions={"A": 5.0})
+    assert targets(strategy, at_mean) == {"A": 0.0}
+
+
+def test_min_trend_without_a_trend_feature_is_refused() -> None:
+    with pytest.raises(ValueError, match="trend_feature"):
+        ZScoreReversion(zscore="z", min_trend=0.1)
+    assert ZScoreReversion(zscore="z", trend_feature="t").required_features == {"z", "t"}

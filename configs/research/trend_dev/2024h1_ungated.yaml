@@ -1,0 +1,66 @@
+# Trend-gate confirmation on development data (docs/decisions.md D70, plan step 3).
+# The D69 candidate, without a trend gate, on 2024h1. Both variants compute the same features, so the
+# only difference is the gate. Spans start 29 days into each dataset so the 30-day basket
+# trend exists from the first decision; exclude_sealed skips folds near the test windows.
+# Nothing is fitted, so validation and test are both plain out-of-sample periods here.
+
+cost_scenarios:
+- free
+- measured_perp
+- measured_retail
+cross_sectional:
+- column: vol_12
+- column: ret_log_8640
+  statistic: mean
+dataset_id: ds_1cbb11366c98ed99
+exclude_sealed: true
+experiment_id: crash-reversion-trend-dev
+features:
+- kind: rolling_volatility
+  params:
+    window: 12
+- kind: rolling_zscore
+  params:
+    window: 72
+- kind: lagged_return
+  params:
+    kind: log
+    lag: 8640
+fill_rules:
+- open_of_current_bar
+label: 2024h1 ungated
+plan:
+  kind: rolling
+  label_horizon: PT1H
+  purge: PT1H
+  test: P7D
+  train: P1D
+  validation: P7D
+  warmup: P1D
+seed: 0
+simulation:
+  constraints:
+    allow_short: false
+    max_gross_exposure: 0.8
+    max_position_weight: 0.3
+  end_of_run: liquidate
+  execution:
+    expire_after: PT5M
+    liquidity_lookback_bars: 60
+    order_latency: PT1S
+    participation_cap: 0.05
+  initial_cash: 10000
+span:
+  end: '2024-07-01T00:00:00Z'
+  start: '2024-01-30T00:00:00Z'
+strategy:
+  kind: zscore_reversion
+  params:
+    entry_z: 3.0
+    exit_z: 0.0
+    max_positions: 2
+    min_rank: 0.8
+    rank_feature: vol_12_xrank
+    sides: long
+    weight: 0.2
+    zscore: zscore_72

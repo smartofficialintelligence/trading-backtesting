@@ -43,12 +43,18 @@ from qresearch.data.calendars import attach_sessions, get_calendar
 from qresearch.data.catalog import DatasetCatalog
 from qresearch.data.manifests import DatasetManifest
 from qresearch.data.point_in_time import UnfilteredScan
-from qresearch.features.cross_sectional import CrossSectionalRank, compute_cross_sectional
+from qresearch.features.cross_sectional import (
+    CrossSectionalFeature,
+    CrossSectionalMean,
+    CrossSectionalRank,
+    compute_cross_sectional,
+)
 from qresearch.features.pipeline import compute_features
 from qresearch.features.registry import build_feature, build_transform
 from qresearch.features.transforms import FittedState, TrainingData, Transform
 from qresearch.ids import DatasetId, InstrumentId
 from qresearch.logging import get_logger, run_context
+from qresearch.research.holdout import SealedWindowError, SealedWindows
 from qresearch.research.metrics import Metrics, annualization_for, compute_metrics
 from qresearch.research.splits import DataSplit, SplitRole, TimeRange
 from qresearch.research.trades import build_trades
@@ -122,6 +128,14 @@ class BacktestConfig(FrozenModel):
     span: TimeRange | None = None
     """Defaults to the dataset's full range."""
 
+    exclude_sealed: bool = False
+    """Skip every fold that touches a sealed test window or its gap: for development runs
+    over data that contains test windows (docs/decisions.md D70)."""
+
+    unseal: tuple[str, ...] = ()
+    """Sealed windows this run may evaluate -- the one-time final evaluation. Recorded in
+    the run spec."""
+
     cost_scenarios: tuple[str, ...] = Field(default=("base",), min_length=1)
     fill_rules: tuple[FillRule, ...] = Field(
         default=(FillRule.OPEN_OF_CURRENT_BAR, FillRule.NEXT_OPEN_AFTER_ELIGIBILITY),
@@ -146,9 +160,14 @@ def resolve_spec(
     cost_scenario: str,
     code_revision: str | None,
     fill_rule: FillRule | None = None,
+    sealed: SealedWindows | None = None,
 ) -> RunSpec:
     if cost_scenario not in COST_SCENARIOS:
         raise KeyError(f"unknown cost scenario {cost_scenario!r}; known: {sorted(COST_SCENARIOS)}")
+    sealed = sealed if sealed is not None else SealedWindows.default()
+    for name in config.unseal:
+        sealed.get(name)
+    excluded = sealed.excluded_ranges(keep=config.unseal) if config.exclude_sealed else ()
     universe = tuple(sorted(config.instrument_ids or manifest.identity.instrument_ids))
     unknown = sorted(set(universe) - set(manifest.identity.instrument_ids))
     if unknown:
@@ -181,6 +200,8 @@ def resolve_spec(
         code_revision=code_revision,
         experiment_id=config.experiment_id,
         label=config.label,
+        excluded=excluded,
+        unsealed=tuple(sorted(config.unseal)),
     )
 
 
@@ -192,8 +213,14 @@ def run_backtest(
     cost_scenario: str = "base",
     fill_rule: FillRule | None = None,
     force: bool = False,
+    sealed: SealedWindows | None = None,
 ) -> RunResult:
-    """Execute (or reuse) one run. Failures are recorded and re-raised."""
+    """Execute (or reuse) one run. Failures are recorded and re-raised.
+
+    ``sealed`` defaults to the repository's registry of test windows. A run touching one it
+    did not name is refused before anything is recorded or reused.
+    """
+    sealed = sealed if sealed is not None else SealedWindows.default()
     manifest = catalog.resolve(config.dataset_id)
     environment = capture_environment(seed=config.seed)
     spec = resolve_spec(
@@ -202,7 +229,9 @@ def run_backtest(
         cost_scenario=cost_scenario,
         code_revision=environment.code_revision,
         fill_rule=fill_rule,
+        sealed=sealed,
     )
+    check_sealed(spec, sealed)
     if store.exists(spec.run_id) and not force:
         existing = store.load_result(spec.run_id)
         if existing.status is RunStatus.COMPLETE:
@@ -224,6 +253,7 @@ def run_sensitivity(
     catalog: DatasetCatalog,
     store: LocalArtifactStore,
     force: bool = False,
+    sealed: SealedWindows | None = None,
 ) -> dict[tuple[str, FillRule], RunResult]:
     """One run per (cost scenario, fill rule): the assumption bracket every study carries."""
     return {
@@ -234,6 +264,7 @@ def run_sensitivity(
             cost_scenario=scenario,
             fill_rule=rule,
             force=force,
+            sealed=sealed,
         )
         for scenario in config.cost_scenarios
         for rule in config.fill_rules
@@ -285,12 +316,7 @@ def _execute(
     bars = attach_sessions(bars, calendar)
     features_all = _compute_features(bars, spec) if spec.features else None
     transforms = [build_transform(t.kind, t.columns, t.params) for t in spec.transforms]
-    folds = (
-        spec.plan.fold()
-        if isinstance(spec.plan, FixedSplitPlan)
-        else generate_folds(spec.plan, spec.span)
-    )
-    folds = folds if isinstance(folds, list) else [folds]
+    folds = plan_folds(spec)
 
     fold_metrics: list[FoldMetrics] = []
     ledgers: dict[str, list[pl.DataFrame]] = {}
@@ -459,7 +485,32 @@ def _limitations(spec: RunSpec) -> list[WarningRecord]:
 def _feature_columns(spec: RunSpec) -> set[str]:
     """Names the configured features and ranks will produce, without computing them."""
     names = {build_feature(f.kind, f.params).spec.name for f in spec.features}
-    return names | {f"{r.column}_xrank" for r in spec.cross_sectional}
+    return names | {r.name for r in spec.cross_sectional}
+
+
+def plan_folds(spec: RunSpec) -> list[Fold]:
+    """The folds a spec runs, after skipping any that touch ``spec.excluded``."""
+    if isinstance(spec.plan, FixedSplitPlan):
+        fold = spec.plan.fold()
+        if any(fold.span.overlaps(excluded) for excluded in spec.excluded):
+            raise ValueError("the fixed split touches an excluded range; no fold remains")
+        return [fold]
+    return generate_folds(spec.plan, spec.span, spec.excluded)
+
+
+def check_sealed(spec: RunSpec, sealed: SealedWindows) -> None:
+    """Refuse a run with a fold inside a sealed test window it did not name (see holdout)."""
+    for fold in plan_folds(spec):
+        for window in sealed.touching(fold.span):
+            if window.name not in spec.unsealed:
+                raise SealedWindowError(
+                    f"fold {fold.index} ({fold.span.start:%Y-%m-%d %H:%M} to "
+                    f"{fold.span.end:%Y-%m-%d %H:%M}) touches sealed test window "
+                    f"{window.name!r} ({window.range.start:%Y-%m-%d} to "
+                    f"{window.range.end:%Y-%m-%d}, gap {window.gap}). Set exclude_sealed: "
+                    f"true to skip such folds during development, or unseal: [{window.name}] "
+                    "for its one-time evaluation."
+                )
 
 
 def _check_strategy_features(spec: RunSpec, available: set[str]) -> None:
@@ -503,8 +554,10 @@ def _compute_features(bars: pl.DataFrame, spec: RunSpec) -> pl.DataFrame:
     frame = compute_features(bars, features)
     if not spec.cross_sectional:
         return frame
-    ranks = [
-        CrossSectionalRank(
+    ranks: list[CrossSectionalFeature] = [
+        CrossSectionalMean(column=r.column, min_members=r.min_members)
+        if r.statistic == "mean"
+        else CrossSectionalRank(
             column=r.column, min_members=r.min_members, pct=r.pct, descending=r.descending
         )
         for r in spec.cross_sectional
@@ -512,7 +565,7 @@ def _compute_features(bars: pl.DataFrame, spec: RunSpec) -> pl.DataFrame:
     missing = sorted({r.column for r in ranks} - set(frame.columns))
     if missing:
         raise ValueError(
-            f"cross-sectional ranks reference columns {missing} that no feature produces; "
+            f"cross-sectional features reference columns {missing} that no feature produces; "
             f"available: "
             f"{sorted(set(frame.columns) - {'instrument_id', 'bar_start', 'available_at'})}"
         )
@@ -606,7 +659,9 @@ __all__ = [
     "COST_SCENARIOS",
     "BacktestConfig",
     "Metrics",
+    "check_sealed",
     "execute",
+    "plan_folds",
     "resolve_spec",
     "run_backtest",
     "run_sensitivity",

@@ -20,6 +20,7 @@ from qresearch.application.run_backtest import BacktestConfig
 from qresearch.config import FrozenModel
 from qresearch.data.catalog import DatasetCatalog
 from qresearch.features.registry import build_feature, build_transform
+from qresearch.research.holdout import SealedWindows
 from qresearch.research.splits import TimeRange
 from qresearch.research.walk_forward import FixedSplitPlan, generate_folds
 from qresearch.strategy.registry import build_strategy
@@ -106,10 +107,17 @@ def preview_plan(config: dict[str, Any], catalog: DatasetCatalog) -> PreviewResu
         start=manifest.identity.range_start, end=manifest.identity.range_end
     )
     try:
+        # The same exclusion the orchestrator applies, so the preview counts the folds that
+        # will actually run.
+        exclude = (
+            SealedWindows.default().excluded_ranges(keep=parsed.unseal)
+            if parsed.exclude_sealed
+            else ()
+        )
         folds = (
             [parsed.plan.fold()]
             if isinstance(parsed.plan, FixedSplitPlan)
-            else generate_folds(parsed.plan, span)
+            else generate_folds(parsed.plan, span, exclude)
         )
     except ValueError as error:
         return PreviewResult(span=span, error=str(error))

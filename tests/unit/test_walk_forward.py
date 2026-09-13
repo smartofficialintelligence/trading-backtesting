@@ -177,3 +177,30 @@ def test_folds_are_serialisable() -> None:
     fold = generate_folds(WalkForwardPlan(train=2 * H, test=H, purge=M), span(4))[0]
     assert type(fold).model_validate_json(fold.model_dump_json()) == fold
     assert isinstance(fold.training_predicate(), pl.Expr)
+
+
+# -- exclusions ---------------------------------------------------------------------------------
+
+
+def test_folds_touching_an_excluded_range_are_skipped_and_the_rest_renumbered() -> None:
+    plan = WalkForwardPlan(train=2 * H, test=H, purge=M)
+    every = generate_folds(plan, span(10))
+    excluded = TimeRange(start=every[2].test.start, end=every[2].test.start + M)
+    kept = generate_folds(plan, span(10), exclude=(excluded,))
+    assert [f.test for f in kept] == [f.test for f in every if not f.span.overlaps(excluded)]
+    assert [f.index for f in kept] == list(range(len(kept)))
+    assert 0 < len(kept) < len(every)
+
+
+def test_a_fold_is_skipped_when_only_its_warmup_touches_the_range() -> None:
+    plan = WalkForwardPlan(train=2 * H, test=H, purge=M, warmup=30 * M)
+    first = generate_folds(plan, span(10))[0]
+    assert first.warmup is not None
+    kept = generate_folds(plan, span(10), exclude=(first.warmup,))
+    assert all(f.test != first.test for f in kept)
+
+
+def test_excluding_every_fold_is_an_error_that_says_so() -> None:
+    plan = WalkForwardPlan(train=2 * H, test=H, purge=M)
+    with pytest.raises(ValueError, match="touch an excluded range"):
+        generate_folds(plan, span(10), exclude=(span(10),))

@@ -19,7 +19,13 @@ from qresearch.application.run_backtest import (
     run_backtest,
     run_sensitivity,
 )
-from qresearch.artifacts.contracts import FeatureRef, RunStatus, StrategyRef, TransformRef
+from qresearch.artifacts.contracts import (
+    CrossSectionalRef,
+    FeatureRef,
+    RunStatus,
+    StrategyRef,
+    TransformRef,
+)
 from qresearch.artifacts.local import LocalArtifactStore
 from qresearch.research.experiments import (
     Agreement,
@@ -29,6 +35,8 @@ from qresearch.research.experiments import (
     fold_table,
     run_table,
 )
+from qresearch.research.holdout import SealedWindow, SealedWindowError, SealedWindows
+from qresearch.research.splits import TimeRange
 from qresearch.research.walk_forward import WalkForwardPlan
 from qresearch.simulation.engine import SimulationConfig
 from qresearch.simulation.execution import ExecutionConfig, FillRule
@@ -629,3 +637,121 @@ def test_a_correctly_referenced_rule_still_runs(
     )
     result = run_backtest(cfg, catalog=ingested.catalog, store=store)
     assert result.aggregate["test"].fill_count > 0
+
+
+# -- sealed test windows ---------------------------------------------------------------------
+
+
+def _window_over_the_second_fold(ingested: IngestedFixture) -> SealedWindows:
+    """The smoke plan's two folds span minutes 0-134 and 60-194 of the data. A window at
+    180-210 with a 10-minute gap touches only the second."""
+    start = ingested.catalog.resolve(ingested.dataset_id).identity.range_start
+    return SealedWindows(
+        windows=(
+            SealedWindow(
+                name="w",
+                range=TimeRange(start=start + 180 * M, end=start + 210 * M),
+                gap=10 * M,
+            ),
+        )
+    )
+
+
+def test_a_run_touching_a_sealed_window_is_refused_before_anything_is_recorded(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    with pytest.raises(SealedWindowError, match="touches sealed test window 'w'"):
+        run_backtest(
+            config(dataset_id=ingested.dataset_id),
+            catalog=ingested.catalog,
+            store=store,
+            sealed=_window_over_the_second_fold(ingested),
+        )
+    assert store.list_runs() == ()
+    assert not (store.root / "failed").exists()
+
+
+def test_exclude_sealed_runs_only_the_untouched_folds_and_records_the_ranges(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    sealed = _window_over_the_second_fold(ingested)
+    result = run_backtest(
+        config(dataset_id=ingested.dataset_id, exclude_sealed=True),
+        catalog=ingested.catalog,
+        store=store,
+        sealed=sealed,
+    )
+    assert {f.fold for f in result.folds} == {0}
+    assert store.load_spec(result.run_id).excluded == (sealed.get("w").guarded,)
+
+
+def test_unsealing_evaluates_the_window_and_the_spec_says_so(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    sealed = _window_over_the_second_fold(ingested)
+    result = run_backtest(
+        config(dataset_id=ingested.dataset_id, unseal=("w",)),
+        catalog=ingested.catalog,
+        store=store,
+        sealed=sealed,
+    )
+    assert len({f.fold for f in result.folds}) == 2
+    assert store.load_spec(result.run_id).unsealed == ("w",)
+    with pytest.raises(ValueError, match="no sealed window named 'nope'"):
+        run_backtest(
+            config(dataset_id=ingested.dataset_id, unseal=("nope",)),
+            catalog=ingested.catalog,
+            store=store,
+            sealed=sealed,
+        )
+
+
+def test_fields_added_later_stay_out_of_the_run_identity_while_unused(
+    ingested: IngestedFixture,
+) -> None:
+    """Earlier run ids must keep resolving: a new field only enters the hash when used."""
+    manifest = ingested.catalog.resolve(ingested.dataset_id)
+    ranked = config(
+        dataset_id=ingested.dataset_id, cross_sectional=(CrossSectionalRef(column="vol_5"),)
+    )
+    plain = resolve_spec(
+        ranked, manifest, cost_scenario="base", code_revision="abc", sealed=SealedWindows()
+    )
+    identity = plain.identity()
+    assert "excluded" not in identity and "unsealed" not in identity
+    assert "statistic" not in identity["cross_sectional"][0]
+
+    meaned = config(
+        dataset_id=ingested.dataset_id,
+        cross_sectional=(CrossSectionalRef(column="vol_5", statistic="mean"),),
+    )
+    assert resolve_spec(meaned, manifest, cost_scenario="base", code_revision="abc").run_id != (
+        plain.run_id
+    )
+    excluding = config(
+        dataset_id=ingested.dataset_id,
+        cross_sectional=(CrossSectionalRef(column="vol_5"),),
+        exclude_sealed=True,
+    )
+    assert (
+        resolve_spec(
+            excluding,
+            manifest,
+            cost_scenario="base",
+            code_revision="abc",
+            sealed=_window_over_the_second_fold(ingested),
+        ).run_id
+        != plain.run_id
+    )
+
+
+def test_a_cross_sectional_mean_reaches_the_strategy(
+    ingested: IngestedFixture, store: LocalArtifactStore
+) -> None:
+    cfg = config(
+        dataset_id=ingested.dataset_id,
+        cross_sectional=(CrossSectionalRef(column="ret_1", statistic="mean"),),
+        strategy=StrategyRef(kind="lagged_signal", params={"feature": "ret_1_xmean"}),
+    )
+    result = run_backtest(cfg, catalog=ingested.catalog, store=store, sealed=SealedWindows())
+    assert result.status is RunStatus.COMPLETE

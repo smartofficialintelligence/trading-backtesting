@@ -797,7 +797,7 @@ Not settled here: maker execution (needs the quote-level model in ARCHITECTURE.m
 klines, which the Binance adapter does not yet support); and impact, which is modelled
 rather than measured.
 
-## D68. Research capital is $10k; July–December 2024 is sealed as the holdout — capital at the user's request; the holdout is **autonomous**
+## D68. Research capital is $10k; July–December 2024 is sealed as the holdout — capital at the user's request; the holdout is **autonomous** — *holdout released in D70*
 
 The user will not start with $100k. The crypto example configs, `my_first_backtest.yaml`
 and the UI launch form now start at $10,000; the engine's library default and the equities
@@ -814,7 +814,7 @@ features, event study or backtest) until a candidate and its parameters are fixe
 then run once, and the result is reported whatever it is. MATICUSDT is left out because
 Binance migrated MATIC to POL during that period.
 
-## D69. Hold until the mean, buy crashes only: a candidate that clears perp costs on development data — **autonomous**
+## D69. Hold until the mean, buy crashes only: a candidate that clears perp costs on development data — **autonomous** — *2022 sealing released in D70*
 
 **Diagnosis.** The rule strategy is stateless (`Rule.target`): it holds a position only
 while the entry condition is still true. The 3σ fade therefore exited at 2.99σ, with a
@@ -876,3 +876,66 @@ above, and its result is reported whatever it is.
 Not modelled: perp costs are applied to spot prices (no basis or funding); maker execution;
 impact beyond the participation model. The candidate is long only, so unlike the old
 strategy it can run on a spot account.
+
+## D70. Three sealed test windows, one per market regime; the earlier holdouts are released — windows chosen with the user
+
+The user wants the final test on recent data, in a bear, a flat and a bull market, not on
+H2 2024 and 2022. This replaces the sealing in D68 and D69. Nothing had been computed on
+either period except regime labels from market prices, so both become development data and
+nothing is lost.
+
+| window | range (UTC days) | nine-coin basket | BTC |
+|---|---|---|---|
+| `bull-2025` | 2025-05-05 – 2025-08-03 (90d) | +26.8% | +20.6% |
+| `bear-2026` | 2026-01-19 – 2026-04-19 (90d) | −30.2% | −20.3% |
+| `flat-2026` | 2026-06-19 – 2026-08-18 (60d) | +4.0% (range −6%/+6%) | +1.9% (range −8%/+5%) |
+
+Each has a 7-day gap on both sides. The definitions are in `configs/sealed_windows.yaml`.
+
+**How they were chosen.** Choices made while looking at data are the ones to audit, so the
+path is recorded as well as the result. Only market prices were used at every step; no
+strategy has been run on any window.
+
+1. First rule, over 90-day windows of the equal-weight basket: bull above +20%, bear below
+   −20%, flat within ±5%. The first flat pick fell 23% before recovering, so flat was
+   tightened to also never move more than 10% from its start.
+2. The user pointed out that BTC was in a bull market from September 2023 to September 2025
+   and a bear market from October 2025 to June 2026. My bull pick, July–October 2025, was an
+   altcoin rally with BTC up only 3.5%, so bull and bear now require BTC *and* the basket to
+   move more than 20%. No 90-day flat window could then avoid overlapping them, so flat
+   became 60 days under the same rule, applied to both.
+
+Limits: each regime is one window, so each result is a single draw, not a distribution. The
+flat window is 60 days, so results are compared per day.
+
+**Enforcement.** `qresearch.research.holdout` loads the registry, and `run_backtest` refuses
+any run with a fold (warm-up through test) inside a window or its gaps, unless the config
+sets `exclude_sealed: true`, which skips those folds, or names the window under `unseal`.
+The run spec records the excluded ranges and the unsealed names, so a run that spent a
+holdout says so. Both fields drop out of the run-id hash when empty, so existing run ids
+are unchanged. Prices inside a window may still be *read as lookback* by decisions after
+its gap, as they would be live; that uses no strategy result.
+
+**Development data.**
+- 2022 (10 coins)
+- 2024 (10 coins to June, 9 from July)
+- 2025–26 outside the guarded ranges: 2025-01-01 – 04-28, 2025-08-11 – 2026-01-12 and
+  2026-04-27 – 06-12. The last six days of August 2026 are too short to use.
+
+**Development plan, written before any development result:**
+
+1. Run the D69 candidate unchanged on development data, reported by era (2022, 2024,
+   2025–26), to see whether crash-buying survives periods where crashes kept going.
+2. Trend filter (the user's idea): gate crash entries on the longer trend. Three measures,
+   fixed in advance: the coin's trailing 7-day return, its trailing 30-day return, and the
+   basket's trailing 30-day return. Event study first, with the D69 episode definition
+   restricted to entries and exits outside the guarded ranges.
+3. **Adoption rule.** A gate is adopted only if entries in an up-trend beat entries in a
+   down-trend in *every* era, and the gated entries clear ~12 bps per round trip (perp
+   costs) pooled, with a day-clustered t of at least 2. If more than one measure passes,
+   the largest pooled gated mean wins; three candidates is a small, stated multiple
+   comparison. Walk-forward backtests on development data must then confirm it.
+4. Not now: floors and ceilings, which need several free parameters for about 200 trades a
+   half-year; position size scaled by trend, which is worth testing only if a gate works.
+5. The final candidate's config is committed before it is evaluated once per window with
+   `unseal`. The results are reported whatever they are.

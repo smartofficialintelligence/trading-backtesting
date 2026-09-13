@@ -46,6 +46,11 @@ class ZScoreReversion:
     """Entries need ``rank_feature >= min_rank``; also breaks ties for scarce slots."""
 
     min_rank: float = 0.0
+    trend_feature: str | None = None
+    """Entries must go with this feature's sign: a long needs it above ``min_trend``, a short
+    below ``-min_trend``. Meant for a longer trend, such as a basket's 30-day return (D70)."""
+
+    min_trend: float = 0.0
     weight: float = 0.2
     """Target weight per position, as a fraction of equity."""
 
@@ -67,10 +72,12 @@ class ZScoreReversion:
             raise ValueError(f"max_positions must be at least 1, got {self.max_positions}")
         if self.rank_feature is None and self.min_rank != 0.0:
             raise ValueError("min_rank filters on rank_feature, which is not set")
+        if self.trend_feature is None and self.min_trend != 0.0:
+            raise ValueError("min_trend filters on trend_feature, which is not set")
 
     @property
     def required_features(self) -> set[str]:
-        return {self.zscore} | ({self.rank_feature} if self.rank_feature else set())
+        return {self.zscore} | {f for f in (self.rank_feature, self.trend_feature) if f}
 
     def reset(self) -> None:
         return None
@@ -128,11 +135,18 @@ class ZScoreReversion:
             rank = _number(row.get(self.rank_feature))
             if rank is None or rank < self.min_rank:
                 return 0.0
+        direction = 0.0
         if z <= -self.entry_z and self.sides in ("long", "both"):
-            return 1.0
-        if z >= self.entry_z and self.sides in ("short", "both"):
-            return -1.0
-        return 0.0
+            direction = 1.0
+        elif z >= self.entry_z and self.sides in ("short", "both"):
+            direction = -1.0
+        if direction == 0.0 or self.trend_feature is None:
+            return direction
+        # A missing trend blocks the entry: an unknown trend is not a trend in our favour.
+        trend = _number(row.get(self.trend_feature))
+        if trend is None or trend * direction <= self.min_trend:
+            return 0.0
+        return direction
 
     def _should_exit(self, quantity: float, row: Mapping[str, Any] | None) -> bool:
         """A missing z-score holds: no information is not a signal to trade."""

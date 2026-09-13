@@ -1,0 +1,144 @@
+# calendar 2022, 10 coins (development)
+#
+#   qresearch data ingest -c configs/datasets/binance_spot_5m_2022.yaml --root data
+#
+# Rebuilt from the manifest of ds_b3e879a94f6033f8 (1051200 rows).
+# Historical klines are immutable, so re-ingesting resolves to the same dataset id.
+
+source_uri: binance://spot?interval=5m&start=2022-01-01T00:00:00Z&end=2023-01-01T00:00:00Z
+source_name: binance:spot-klines-v3
+bar_size: 5m
+asset_class: crypto
+venue: BINANCE
+calendar_id: 24x7:1
+normalization_version: '1'
+expect_complete_grid: true
+policy:
+  timestamp_label: bar_start
+  publication_latency: PT2S
+  price_adjustment: not_applicable
+  missing_bars: omit
+  duplicates: error
+  revisions: as_known
+  volume_unit: base_asset
+instruments:
+- instrument_id: CRYPTO:ADAUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: ADA
+  price_increment: '0.0001'
+  quantity_increment: '0.1'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: ADAUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'
+- instrument_id: CRYPTO:AVAXUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: AVAX
+  price_increment: '0.001'
+  quantity_increment: '0.01'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: AVAXUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'
+- instrument_id: CRYPTO:BNBUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: BNB
+  price_increment: '0.01'
+  quantity_increment: '0.001'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: BNBUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'
+- instrument_id: CRYPTO:BTCUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: BTC
+  price_increment: '0.01'
+  quantity_increment: '0.00001'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: BTCUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'
+- instrument_id: CRYPTO:DOGEUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: DOGE
+  price_increment: '0.00001'
+  quantity_increment: '1'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: DOGEUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'
+- instrument_id: CRYPTO:ETHUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: ETH
+  price_increment: '0.01'
+  quantity_increment: '0.0001'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: ETHUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'
+- instrument_id: CRYPTO:LINKUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: LINK
+  price_increment: '0.001'
+  quantity_increment: '0.01'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: LINKUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'
+- instrument_id: CRYPTO:MATICUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: MATIC
+  price_increment: '0.0001'
+  quantity_increment: '0.1'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: MATICUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'
+- instrument_id: CRYPTO:SOLUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: SOL
+  price_increment: '0.01'
+  quantity_increment: '0.001'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: SOLUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'
+- instrument_id: CRYPTO:XRPUSDT
+  asset_class: crypto
+  venue: BINANCE
+  quote_currency: USDT
+  base_currency: XRP
+  price_increment: '0.0001'
+  quantity_increment: '0.1'
+  calendar_id: 24x7:1
+  aliases:
+  - symbol: XRPUSDT
+    source: binance:spot-klines-v3
+    effective_from: '2015-01-01T00:00:00Z'

@@ -6,9 +6,15 @@ import datetime as dt
 
 import polars as pl
 import pytest
+from pydantic import ValidationError
 from tests.unit.test_resample import minute_bars
 
-from qresearch.features.cross_sectional import CrossSectionalRank, compute_cross_sectional
+from qresearch.artifacts.contracts import CrossSectionalRef
+from qresearch.features.cross_sectional import (
+    CrossSectionalMean,
+    CrossSectionalRank,
+    compute_cross_sectional,
+)
 from qresearch.features.leakage import assert_future_insensitive, assert_prefix_invariant
 from qresearch.features.pipeline import compute_features
 from qresearch.features.technical import LaggedReturn
@@ -214,3 +220,64 @@ def test_duplicate_rows_are_refused() -> None:
 def test_empty_rank_list_is_refused() -> None:
     with pytest.raises(ValueError, match="no cross-sectional"):
         compute_cross_sectional(compute_features(multi_bars(3), [LaggedReturn(1)]), [])
+
+
+# -- means -----------------------------------------------------------------------------
+
+
+def ret_then_mean(bars: pl.DataFrame, **kwargs: object) -> pl.DataFrame:
+    frame = compute_features(bars, [LaggedReturn(1)])
+    return compute_cross_sectional(frame, [CrossSectionalMean("ret_1", **kwargs)])  # type: ignore[arg-type]
+
+
+def test_the_mean_is_one_equal_weight_average_carried_on_every_row() -> None:
+    out = ret_then_mean(multi_bars(4))
+    returns = column_at(out, "ret_1", 2)
+    expected = sum(returns.values()) / 3  # type: ignore[arg-type]
+    assert column_at(out, "ret_1_xmean", 2) == {k: pytest.approx(expected) for k in "ABC"}
+
+
+def test_the_mean_is_over_the_members_present() -> None:
+    out = ret_then_mean(multi_bars(8, skip={"B": {5}}))
+    at5 = column_at(out, "ret_1", 5)
+    assert (
+        list(column_at(out, "ret_1_xmean", 5).values())
+        == [
+            pytest.approx((at5["A"] + at5["C"]) / 2)  # type: ignore[operator]
+        ]
+        * 2
+    )
+    # At 6, B has a row but a nulled ret_1: not a member, yet its row carries the mean.
+    at6 = column_at(out, "ret_1", 6)
+    assert column_at(out, "ret_1_xmean", 6)["B"] == pytest.approx((at6["A"] + at6["C"]) / 2)  # type: ignore[operator]
+
+
+def test_min_members_nulls_a_thin_basket() -> None:
+    out = ret_then_mean(multi_bars(8, skip={"B": {5}}), min_members=3)
+    assert set(column_at(out, "ret_1_xmean", 5).values()) == {None}
+    with pytest.raises(ValueError, match="min_members must be >= 2"):
+        CrossSectionalMean("x", min_members=1)
+
+
+@pytest.mark.parametrize(
+    "bars",
+    [
+        multi_bars(40, skip={"B": {12, 13}}),
+        multi_bars(
+            40,
+            skip={"C": {20}},
+            late={"A": {9: dt.timedelta(minutes=6)}, "B": {30: dt.timedelta(minutes=3)}},
+        ),
+    ],
+    ids=["gap", "gap_and_late"],
+)
+def test_means_pass_both_leakage_checks(bars: pl.DataFrame) -> None:
+    assert_prefix_invariant(ret_then_mean, bars)
+    assert_future_insensitive(ret_then_mean, bars)
+
+
+def test_a_mean_ref_names_its_column_and_refuses_rank_options() -> None:
+    assert CrossSectionalRef(column="x", statistic="mean").name == "x_xmean"
+    assert CrossSectionalRef(column="x").name == "x_xrank"
+    with pytest.raises(ValidationError, match="apply to ranks"):
+        CrossSectionalRef(column="x", statistic="mean", descending=True)
