@@ -939,3 +939,60 @@ its gap, as they would be live; that uses no strategy result.
    half-year; position size scaled by trend, which is worth testing only if a gate works.
 5. The final candidate's config is committed before it is evaluated once per window with
    `unseal`. The results are reported whatever they are.
+
+## D71. The basket trend gate improves the candidate, but the candidate has no edge in 2025–26; the test windows stay sealed — **autonomous** (analysis); what next is the user's call
+
+The D70 plan's step 3: walk-forward backtests on development data of the D69 candidate with
+and without the basket gate (`trend_feature: ret_log_8640_xmean`), configs in
+`configs/research/trend_dev/`. There are 24 runs, all at code `fdd199f`, experiment
+`crash-reversion-trend-dev`. Nothing is fitted, so each fold has a 1-day warm-up and a
+1-day train, followed by 7-day validation and 7-day test periods that are pooled as
+evaluation time. Spans start 29 days into each dataset so the 30-day trend exists from the
+first decision, and `exclude_sealed` is on.
+
+Perp costs (0.43 bps half-spread + 5 bps fee), $10k. Each evaluation period starts from
+$10k, so P&L is summed, not compounded. Gross edge carries a day-clustered standard error.
+
+| era (days evaluated) | gate | trades/day | gross bps/trade | net bps/trade | P&L | worst drawdown |
+|---|---|---|---|---|---|---|
+| 2022 (322) | none | 2.6 | 13.0 ± 10.0 | 1.7 | +$274 | 16.9% |
+| | basket | 0.8 | 35.9 ± 16.9 | 24.6 | +$1,254 | 8.9% |
+| 2024 H1 (140) | none | 2.4 | 33.9 ± 14.5 | 22.7 | +$1,547 | 12.9% |
+| | basket | 1.2 | 52.3 ± 14.7 | 41.1 | +$1,423 | 5.3% |
+| 2024 H2 (140) | none | 2.0 | 37.4 ± 17.1 | 26.2 | +$1,448 | 11.6% |
+| | basket | 1.1 | 63.9 ± 24.2 | 52.7 | +$1,675 | 6.3% |
+| **2025–26 (252)** | none | 2.1 | **6.5 ± 12.9** | −4.8 | **−$536** | 23.6% |
+| | basket | 0.5 | **−5.5 ± 16.7** | −16.8 | **−$457** | 14.8% |
+| pooled (854) | none | 2.3 | 18.1 | 6.9 | +$2,734 | 23.6% |
+| | basket | 0.8 | 38.1 | 26.9 | +$3,894 | 14.8% |
+
+At spot retail costs (0.72 + 10 bps) the gate turns the pooled result from −$1,503 into
++$2,356. In 2025–26 it is −$747 with the gate against −$1,666 without.
+
+**The gate is adopted.** D70 asked the walk-forward to confirm the event study, and it does
+so as an improvement. With the gate, edge per trade is higher in three of four eras, and
+P&L is higher in three of four at perp costs (2024 H1 is $124 lower) and in all four at
+retail. Drawdown roughly halves in every era, and the pooled result is better.
+
+**The candidate is not working.** Without the gate, gross edge per trade was 13 bps in
+2022, 34–37 in 2024 and 6.5 in 2025–26. In the most recent era it loses money at perp
+costs with or without the gate. The gated −5.5 bps is 137 trades, indistinguishable from
+zero, and also from the event study's +14. The two disagree partly because the backtest
+holds at most two positions and evaluates 252 of the 323 development days. The gated
+losses cluster at the September 2025 turn after the summer rally, when a 30-day trend still
+reads up: the known weakness of a lagging trend filter.
+
+**The test windows are not run.** All three lie in 2025–26, the era where development data
+already shows no edge. Evaluating now would spend them to confirm a negative and leave no
+clean test for a better candidate. They stay sealed until a candidate makes money on
+2025–26 development data.
+
+Observed, not acted on: every trade closed within 23 hours. Those closed within 4 hours
+were almost all winners, and those held 4–24 hours were mostly losers. That split is only
+known afterwards (a quick exit means price bounced), so it is not a rule. A time stop would
+be a new hypothesis.
+
+Multiple comparisons so far: ~70 event-study cells (D69); three trend measures plus
+terciles (D70); here two variants × four eras × three cost levels. The recent development
+data is thin (~250 evaluated days) and has now been looked at closely. Any further idea
+tested on it inherits that.
